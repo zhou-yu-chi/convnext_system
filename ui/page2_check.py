@@ -24,7 +24,12 @@ class Page2_Check(QWidget):
         lbl_hint.setStyleSheet("font-size: 16px; font-weight: bold;")
         
         self.combo_folder = QComboBox()
-        self.combo_folder.addItems(["✅ 檢視 OK 良品資料夾", "❌ 檢視 NG 不良品資料夾"])
+        self.combo_folder.addItems([
+            "✅ 檢視 OK 良品資料夾", 
+            "❌ 檢視 NG 不良品資料夾", 
+            "❓ 檢視 待確認照片 (Unconfirmed)"
+        ])
+        
         self.combo_folder.setStyleSheet("""
             QComboBox { padding: 5px; font-size: 14px; min-width: 200px; }
         """)
@@ -91,24 +96,41 @@ class Page2_Check(QWidget):
         self.update_buttons_state()
 
     def on_folder_changed(self, index):
-        """切換檢視 OK 或 NG 資料夾"""
-        self.current_folder = "OK" if index == 0 else "NG"
+        """切換檢視 OK, NG 或 Unconfirmed 資料夾"""
+        if index == 0:
+            self.current_folder = "OK"
+        elif index == 1:
+            self.current_folder = "NG"
+        else:
+            # ★★★ 新增這裡：對應到實體資料夾名稱 ★★★
+            self.current_folder = "Unconfirmed" 
+            
         self.load_images()
         self.update_buttons_state()
 
     def update_buttons_state(self):
         """依據目前在哪個資料夾，隱藏不必要的按鈕"""
-        if self.current_folder == "OK":
-            self.btn_move_ok.setVisible(False)
-            self.btn_move_ng.setVisible(True)
-        else:
-            self.btn_move_ok.setVisible(True)
-            self.btn_move_ng.setVisible(False)
         
-        # 清空預覽
+        # 清空預覽 (換資料夾時，先把上一張圖清掉)
         self.image_preview.setText("請選擇照片")
         self.image_preview.setPixmap(QPixmap())
         self.current_selected_path = None
+
+        # ★★★ 修改這裡：按鈕顯示邏輯 ★★★
+        if self.current_folder == "OK":
+            # 在 OK 資料夾：只能搬去 NG，不能搬去 OK
+            self.btn_move_ok.setVisible(False)
+            self.btn_move_ng.setVisible(True)
+            
+        elif self.current_folder == "NG":
+            # 在 NG 資料夾：只能搬去 OK，不能搬去 NG
+            self.btn_move_ok.setVisible(True)
+            self.btn_move_ng.setVisible(False)
+            
+        elif self.current_folder == "Unconfirmed":
+            # 在 待確認 資料夾：兩個按鈕都要顯示，讓使用者決定去向
+            self.btn_move_ok.setVisible(True)
+            self.btn_move_ng.setVisible(True)
 
     def load_images(self):
         """讀取資料夾圖片並顯示在清單中"""

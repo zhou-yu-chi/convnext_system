@@ -71,13 +71,23 @@ class TrainingWorker(QThread):
             # 建立模型儲存資料夾
             current_file_dir = os.path.dirname(os.path.abspath(__file__))
             
-            # 2. 往上一層走，回到主程式根目錄 (假設 main.py 在這)
+            # 2. 往上一層走，回到主程式根目錄
             root_dir = os.path.dirname(current_file_dir)
             
-            # 3. 指定一個統一的資料夾名稱，例如 "All_Trained_Models"
-            save_dir = os.path.join(root_dir, "All_Trained_Models")
+            # 3. 指定根儲存目錄
+            base_save_dir = os.path.join(root_dir, "All_Trained_Models")
             
-            if not os.path.exists(save_dir): os.makedirs(save_dir)
+            # ★★★ 修改開始：建立「專案名稱」的子資料夾 ★★★
+            # 取得目前的專案名稱 (例如: ProjectA)
+            project_name = os.path.basename(self.project_path)
+            
+            # 組合出最終路徑: All_Trained_Models/ProjectA
+            final_save_dir = os.path.join(base_save_dir, project_name)
+            
+            # 如果這個專案的專屬資料夾不存在，就建立它
+            if not os.path.exists(final_save_dir):
+                os.makedirs(final_save_dir)
+            # ★★★ 修改結束 ★★★
 
             # 產生這次訓練專用的檔名 (包含日期時間)
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -85,7 +95,7 @@ class TrainingWorker(QThread):
             project_name = os.path.basename(self.project_path)
             model_filename = f"best_{project_name}_{timestamp}.pth"
             
-            save_path = os.path.join(save_dir, model_filename)
+            save_path = os.path.join(final_save_dir, model_filename)
             
             self.log_signal.emit(f"💾 本次訓練模型將儲存至根目錄: {save_path}")
             # ★★★ 修改重點結束 ★★★

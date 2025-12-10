@@ -12,7 +12,7 @@ class DataHandler:
         """新增專案：建立 OK, NG, ROI 三個資料夾"""
         self.project_path = folder_path
         
-        for name in ["OK", "NG", "ROI" ,"unconfirmed"]:
+        for name in ["OK", "NG", "ROI" ,"Unconfirmed"]:
             path = os.path.join(folder_path, name)
             if not os.path.exists(path):
                 os.makedirs(path)

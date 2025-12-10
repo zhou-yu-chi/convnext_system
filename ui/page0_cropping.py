@@ -47,13 +47,14 @@ class CroppableLabel(QLabel):
 
     # 這是 Qt 系統自動呼叫的「繪圖函式」
     def paintEvent(self, event):
+        # 如果沒有縮圖 (scaled_pixmap 是 None)，就直接離開，不要畫任何東西
         if not self.scaled_pixmap:
-            super().paintEvent(event)
+            super().paintEvent(event) # 畫背景文字 (例如: "無待處理照片")
             return
+            
         painter = QPainter(self)
-        # 1. 先畫圖片 (畫在算出偏移量的位置)
         painter.drawPixmap(self.offset_x, self.offset_y, self.scaled_pixmap)
-        # 2. 如果有點擊起點和終點，就畫紅框
+        
         if self.start_point and self.end_point:
             rect = QRect(self.start_point, self.end_point).normalized()
             pen = QPen(QColor(255, 0, 0), 2, Qt.PenStyle.SolidLine)
@@ -106,6 +107,14 @@ class CroppableLabel(QLabel):
     def resizeEvent(self, event):
         self.update_display()
         super().resizeEvent(event)
+
+    def clear_canvas(self):
+        self.original_pixmap = None
+        self.scaled_pixmap = None
+        self.start_point = None
+        self.end_point = None
+        self.clear()   # 清除 QLabel 的文字或圖片
+        self.update()  # 強制觸發 paintEvent 重畫 (會變成空白)
 
 class Page0_Cropping(QWidget):
     def __init__(self, data_handler):
@@ -182,9 +191,16 @@ class Page0_Cropping(QWidget):
             self.btn_skip.setEnabled(True)
         else:
             # 如果清單是空的
-            self.image_label.clear()
-            self.image_label.setText("已無待處理照片...")
             self.current_image_path = None
+            
+            # 1. 呼叫剛剛寫的清除功能
+            self.image_label.clear_canvas() 
+            
+            # 2. 顯示提示文字
+            self.image_label.setText("🎉 已無待處理照片\n(請點擊上方標籤前往 [1. 照片標註])")
+            self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter) # 文字置中
+            
+            # 3. 鎖定按鈕
             self.btn_crop.setEnabled(False)
             self.btn_skip.setEnabled(False)
 

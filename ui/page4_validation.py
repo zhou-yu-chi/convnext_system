@@ -1,37 +1,41 @@
 import os
 import datetime
+import shutil  # <--- 1. 新增：引入 shutil 用來複製檔案
 import torch
 import torch.nn as nn
 from torchvision import models, transforms
 from PIL import Image
+from sklearn.metrics import accuracy_score
 
-# 新增：計算指標用的庫
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
-
-# PySide6 UI 元件
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QLabel, QFileDialog, QMessageBox, QProgressBar, 
-                             QTextEdit, QFrame, QGridLayout, QGroupBox)
+                             QTextEdit, QFrame)
 from PySide6.QtCore import Qt, QThread, Signal
 
 # ==========================================
-# 1. 後台驗證執行緒
+# 1. 後台驗證執行緒 (修改了邏輯)
 # ==========================================
 class VerificationWorker(QThread):
     progress_signal = Signal(int, int)
     log_signal = Signal(str)
     finished_signal = Signal(list)
 
-    def __init__(self, model_path, image_paths, device_str):
+    # 2. 修改：多接收一個 unconfirmed_dir 參數
+    def __init__(self, model_path, image_paths, device_str, unconfirmed_dir):
         super().__init__()
         self.model_path = model_path
         self.image_paths = image_paths
         self.device = torch.device(device_str)
+        self.unconfirmed_dir = unconfirmed_dir # 存下來
         self.is_running = True
 
     def run(self):
         results = []
         try:
+            # 如果有設定 Unconfirmed 資料夾，先確保它存在
+            if self.unconfirmed_dir and not os.path.exists(self.unconfirmed_dir):
+                os.makedirs(self.unconfirmed_dir)
+
             self.log_signal.emit(f"🚀 正在載入模型: {os.path.basename(self.model_path)}...")
             
             # --- 重建模型 ---
@@ -52,19 +56,20 @@ class VerificationWorker(QThread):
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
 
-            # 確保類別順序與訓練時一致 (通常 ImageFolder 是照字母排: NG=0, OK=1)
             classes = ['NG', 'OK'] 
-            
             total = len(self.image_paths)
+            
+            saved_count = 0 # 記錄存了幾張到 Unconfirmed
+
             for i, img_path in enumerate(self.image_paths):
                 if not self.is_running: break
 
                 try:
-                    # 嘗試從父資料夾取得 "正確答案" (Ground Truth)
+                    # 取得真實標籤 (Ground Truth)
                     parent_folder = os.path.basename(os.path.dirname(img_path))
                     true_label = parent_folder if parent_folder in ['OK', 'NG'] else None
 
-                    # 讀取圖片與推論
+                    # 讀取與推論
                     image = Image.open(img_path).convert('RGB')
                     input_tensor = val_transforms(image).unsqueeze(0).to(self.device)
 
@@ -80,23 +85,40 @@ class VerificationWorker(QThread):
                     result_item = {
                         "file_name": os.path.basename(img_path),
                         "path": img_path,
-                        "true_label": true_label, # 真實標籤 (可能是 None)
-                        "prediction": pred_label, # 預測結果
+                        "true_label": true_label,
+                        "prediction": pred_label,
                         "confidence": confidence
                     }
                     results.append(result_item)
                     
-                    # Log 顯示
+                    # Log 顯示與錯誤處理
                     status = ""
                     if true_label:
-                        is_correct = "✅" if true_label == pred_label else "❌"
-                        status = f"| 真實: {true_label} {is_correct}"
-                    
-                    self.log_signal.emit(f"[{i+1}/{total}] {result_item['file_name']} -> {pred_label} ({confidence:.1%}) {status}")
+                        if true_label == pred_label:
+                            status = "✅ 正確"
+                        else:
+                            status = "❌ 錯誤"
+                            # ★★★ 關鍵修改：預測錯誤時，複製到 Unconfirmed 資料夾 ★★★
+                            if self.unconfirmed_dir:
+                                try:
+                                    file_name = os.path.basename(img_path)
+                                    # 為了避免檔名重複，可以加個 prefix 或是直接覆蓋 (這裡示範直接複製)
+                                    dst_path = os.path.join(self.unconfirmed_dir, file_name)
+                                    shutil.copy2(img_path, dst_path)
+                                    status += " (已存至待確認區)"
+                                    saved_count += 1
+                                except Exception as e:
+                                    print(f"複製失敗: {e}")
+
+                    self.log_signal.emit(f"[{i+1}/{total}] {os.path.basename(img_path)} -> {pred_label} ({confidence:.1%}) {status}")
                     self.progress_signal.emit(i + 1, total)
 
                 except Exception as e:
                     self.log_signal.emit(f"❌ 讀取失敗 {os.path.basename(img_path)}: {e}")
+
+            # 結束時提示
+            if saved_count > 0:
+                self.log_signal.emit(f"\n⚠️ 共有 {saved_count} 張預測錯誤的照片已複製到 'Unconfirmed' 資料夾。\n請前往 [Page 2 結果檢查] 進行人工複判。")
 
             self.finished_signal.emit(results)
 
@@ -109,27 +131,28 @@ class VerificationWorker(QThread):
 
 
 # ==========================================
-# 2. 頁面四 UI
+# 2. 頁面四 UI (修改 init 接收 data_handler)
 # ==========================================
 class Page4_Verification(QWidget):
-    def __init__(self):
+    # 3. 修改：__init__ 接收 data_handler
+    def __init__(self, data_handler):
         super().__init__()
+        self.data_handler = data_handler # 存下來
         self.image_paths = []
         self.model_path = ""
         self.worker = None
         self.init_ui()
 
     def init_ui(self):
+        # ... (這裡的介面程式碼完全不用動，維持您原本的樣子即可) ...
         main_layout = QVBoxLayout()
         main_layout.setSpacing(15)
         main_layout.setContentsMargins(20, 20, 20, 20)
 
-        # --- 標題區 ---
         lbl_title = QLabel("步驟 4: 模型驗證")
         lbl_title.setStyleSheet("font-size: 24px; font-weight: bold; color: #4db6ac;")
         main_layout.addWidget(lbl_title)
 
-        # --- 頂部：控制面板 ---
         control_panel = QFrame()
         control_panel.setStyleSheet("background-color: #333; border-radius: 10px; padding: 10px;")
         control_layout = QHBoxLayout(control_panel)
@@ -147,23 +170,29 @@ class Page4_Verification(QWidget):
         self.btn_start.clicked.connect(self.on_start_verification)
         self.btn_start.setEnabled(False)
 
+        self.btn_export_model = QPushButton("💾 模型匯出")
+        # 給它一個紫色 (#7b1fa2) 區分
+        self.btn_export_model.setStyleSheet(self.get_btn_style("#7b1fa2"))
+        self.btn_export_model.clicked.connect(self.on_export_model)
+        self.btn_export_model.setEnabled(False) # 一開始先鎖住，等選了模型才開啟
+
         control_layout.addWidget(self.btn_load_images)
         control_layout.addWidget(self.btn_load_model)
         control_layout.addWidget(self.btn_start)
+        control_layout.addWidget(self.btn_export_model) # 把按鈕加進版面
+        
         main_layout.addWidget(control_panel)
 
-        # --- 中間：只顯示準確率與公式 ---
-        # 1. 準確率卡片
+        
+
         self.lbl_acc = self.create_metric_card("🏆 整體準確率 (Accuracy)")
         main_layout.addWidget(self.lbl_acc)
 
-        # 2. 公式說明文字 (新增這段)
         lbl_formula = QLabel("💡 計算方式： ( 預測正確的照片數 / 總照片數 ) × 100%")
         lbl_formula.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_formula.setStyleSheet("color: #aaa; font-size: 14px; font-style: italic; margin-bottom: 10px;")
         main_layout.addWidget(lbl_formula)
 
-        # --- 底部：進度條與 Log ---
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet("""
             QProgressBar { border: 2px solid #555; border-radius: 5px; text-align: center; height: 25px; color: white; }
@@ -179,32 +208,24 @@ class Page4_Verification(QWidget):
             QTextEdit { background-color: #1e1e1e; color: #cfcfcf; font-family: Consolas; font-size: 13px; border: 1px solid #555; }
         """)
         main_layout.addWidget(self.txt_output)
-
         self.setLayout(main_layout)
 
     def create_metric_card(self, title):
-        """建立漂亮的指標顯示卡片"""
         container = QFrame()
         container.setStyleSheet("background-color: #2b2b2b; border-radius: 5px; border: 1px solid #444;")
         layout = QVBoxLayout(container)
         layout.setSpacing(5)
-        
         lbl_title = QLabel(title)
         lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_title.setStyleSheet("color: #aaa; font-size: 12px;")
-        
+        lbl_title.setStyleSheet("color: #aaa; font-size: 16px;")
         lbl_value = QLabel("--%")
         lbl_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_value.setStyleSheet("color: #4db6ac; font-size: 24px; font-weight: bold;")
-        
+        lbl_value.setStyleSheet("color: #4db6ac; font-size: 48px; font-weight: bold;")
         layout.addWidget(lbl_title)
         layout.addWidget(lbl_value)
         return container
 
     def update_metric_display(self, acc):
-        """更新儀表板數字"""
-        # 我們現在只剩下 lbl_acc 這個元件，所以只更新它
-        # 取得容器內的數值 Label (它是 layout 裡的第 2 個元件，index 1)
         if hasattr(self, 'lbl_acc') and self.lbl_acc:
              lbl_val = self.lbl_acc.layout().itemAt(1).widget()
              lbl_val.setText(f"{acc:.2%}")
@@ -216,10 +237,8 @@ class Page4_Verification(QWidget):
             QPushButton:disabled {{ background-color: #555; color: #aaa; }}
         """
 
-    # --- 邏輯功能 ---
-
     def on_load_images(self):
-        folder = QFileDialog.getExistingDirectory(self, "選擇驗證資料夾 (建議包含 OK/NG 子資料夾)")
+        folder = QFileDialog.getExistingDirectory(self, "選擇驗證資料夾")
         if folder:
             valid_exts = ('.jpg', '.jpeg', '.png', '.bmp')
             self.image_paths = []
@@ -227,30 +246,24 @@ class Page4_Verification(QWidget):
                 for f in files:
                     if f.lower().endswith(valid_exts):
                         self.image_paths.append(os.path.join(root, f))
-            
-            self.txt_output.append(f"📂 已載入 {len(self.image_paths)} 張圖片 (來源: {os.path.basename(folder)})")
+            self.txt_output.append(f"📂 已載入 {len(self.image_paths)} 張圖片")
             self.check_ready()
         
     def on_load_model(self):
-        """選擇 .pth 模型檔 (預設開啟 All_Trained_Models 資料夾)"""
-        
-        # 1. 計算預設路徑：從 ui 資料夾往上一層 -> 進入 All_Trained_Models
-        current_file_dir = os.path.dirname(os.path.abspath(__file__)) # ui 資料夾
-        root_dir = os.path.dirname(current_file_dir)                 # 專案根目錄
-        models_dir = os.path.join(root_dir, "All_Trained_Models")      # 目標資料夾
-        
-        # 如果這個資料夾還沒被建立過 (例如還沒訓練過)，就預設開在根目錄，避免程式報錯
+        current_file_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.dirname(current_file_dir)
+        models_dir = os.path.join(root_dir, "All_Trained_Models")
         start_path = models_dir if os.path.exists(models_dir) else root_dir
-
-        # 2. 開啟檔案選擇視窗 (第三個參數就是起始路徑)
+        
         path, _ = QFileDialog.getOpenFileName(self, "選擇模型檔案", start_path, "PyTorch Model (*.pth)")
         
         if path:
             self.model_path = path
-            # 顯示檔名就好，不用顯示長長的路徑
             self.txt_output.append(f"🧠 已選擇模型: {os.path.basename(path)}")
             self.check_ready()
-
+            
+            # ★★★ 新增這行：啟用匯出按鈕 ★★★
+            self.btn_export_model.setEnabled(True)
     def check_ready(self):
         if self.image_paths and self.model_path:
             self.btn_start.setEnabled(True)
@@ -263,16 +276,23 @@ class Page4_Verification(QWidget):
         self.btn_load_model.setEnabled(False)
         self.txt_output.clear()
         self.progress_bar.setValue(0)
-        
-        # ★★★ 修正這裡 ★★★
-        # 原本是 self.update_metric_display(0,0,0,0)
-        # 因為現在只剩準確率，所以只要傳一個 0 進去歸零就好
         self.update_metric_display(0)
         
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.txt_output.append(f"🚀 開始驗證... (Device: {device})")
+        
+        # 4. 取得 Unconfirmed 資料夾路徑
+        unconfirmed_path = None
+        if self.data_handler and self.data_handler.project_path:
+            unconfirmed_path = os.path.join(self.data_handler.project_path, "Unconfirmed")
+        else:
+            self.txt_output.append("⚠️ 警告：目前沒有開啟專案，預測錯誤的照片將無法存檔！")
 
-        self.worker = VerificationWorker(self.model_path, self.image_paths, device)
+        self.txt_output.append(f"🚀 開始驗證... (Device: {device})")
+        if unconfirmed_path:
+            self.txt_output.append(f"📂 錯誤照片將存至: {unconfirmed_path}")
+
+        # 傳入 unconfirmed_path 給 Worker
+        self.worker = VerificationWorker(self.model_path, self.image_paths, device, unconfirmed_path)
         self.worker.log_signal.connect(self.txt_output.append)
         self.worker.progress_signal.connect(self.update_progress)
         self.worker.finished_signal.connect(self.on_verification_finished)
@@ -291,26 +311,19 @@ class Page4_Verification(QWidget):
             QMessageBox.warning(self, "結束", "無結果")
             return
 
-        # --- 計算指標 ---
         valid_results = [r for r in results if r['true_label'] is not None]
-        
         summary = ""
         
         if len(valid_results) > 0:
             y_true = [r['true_label'] for r in valid_results]
             y_pred = [r['prediction'] for r in valid_results]
             
-            # 1. 計算準確率
             acc = accuracy_score(y_true, y_pred)
-            
-            # 2. 計算答對幾題
             correct_count = sum(1 for t, p in zip(y_true, y_pred) if t == p)
             total_count = len(y_true)
 
-            # 更新 UI 數字
             self.update_metric_display(acc)
             
-            # 產生報告文字
             summary = (
                 f"\n=== 📊 驗證結果摘要 ===\n"
                 f"總照片數    : {total_count} 張\n"
@@ -320,16 +333,38 @@ class Page4_Verification(QWidget):
                 f"準確率 (Accuracy) : {acc:.2%}  (即 {correct_count} ÷ {total_count})\n"
             )
         else:
-            summary += "\n⚠️ 警告: 無法計算準確率，因為圖片不在 OK/NG 資料夾內，無法得知正確答案。\n"
+            summary += "\n⚠️ 警告: 無法計算準確率，因為圖片不在 OK/NG 資料夾內。\n"
 
         self.txt_output.append(summary)
         self.save_report(results, summary)
 
+    def on_export_model(self):
+        """匯出目前選擇的模型檔案"""
+        if not self.model_path or not os.path.exists(self.model_path):
+            QMessageBox.warning(self, "錯誤", "尚未選擇模型或原檔案不存在！")
+            return
+
+        # 預設檔名使用原本的檔名
+        default_name = os.path.basename(self.model_path)
+        
+        # 跳出「另存新檔」視窗
+        save_path, _ = QFileDialog.getSaveFileName(self, "匯出模型", default_name, "PyTorch Model (*.pth)")
+        
+        if save_path:
+            try:
+                # 複製檔案 (需要 import shutil，我們之前在檔案最上面已經加過了)
+                shutil.copy2(self.model_path, save_path)
+                QMessageBox.information(self, "成功", f"模型已成功匯出至：\n{save_path}")
+                self.txt_output.append(f"💾 模型已匯出: {save_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "錯誤", f"匯出失敗: {str(e)}")
+                
+
     def save_report(self, results, summary):
+        # ... (這裡的 save_report 維持您之前改好的樣子，不用動) ...
         try:
             report_dir = "validation_reports"
             if not os.path.exists(report_dir): os.makedirs(report_dir)
-            
             today = datetime.datetime.now().strftime("%Y%m%d")
             idx = 1
             while True:
@@ -337,7 +372,6 @@ class Page4_Verification(QWidget):
                 full_path = os.path.join(report_dir, filename)
                 if not os.path.exists(full_path): break
                 idx += 1
-            
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write(f"測試時間: {datetime.datetime.now()}\n")
                 f.write(f"模型路徑: {self.model_path}\n")
@@ -345,7 +379,6 @@ class Page4_Verification(QWidget):
                 f.write("\n=== 詳細清單 ===\n")
                 f.write(f"{'檔名':<30} | {'真實':<6} | {'預測':<6} | {'信心度':<8} | {'結果':<4}\n")
                 f.write("-" * 80 + "\n")
-                
                 for r in results:
                     true_s = r['true_label'] if r['true_label'] else "?"
                     mark = "✅" if r['true_label'] == r['prediction'] else "❌"
@@ -353,11 +386,7 @@ class Page4_Verification(QWidget):
                     f.write(f"{r['file_name']:<30} | {true_s:<6} | {r['prediction']:<6} | {r['confidence']:.4f}   | {mark}\n")
             
             self.txt_output.append(f"📁 報告已儲存: {full_path}")
-            
-            # ★★★ 修正這裡 ★★★
-            # 移除 lbl_f1，改為單純顯示完成，或是顯示目前的準確率
             acc_text = self.lbl_acc.layout().itemAt(1).widget().text()
             QMessageBox.information(self, "完成", f"驗證完成！報告已儲存。\n\n整體準確率: {acc_text}")
-
         except Exception as e:
             QMessageBox.critical(self, "錯誤", f"存檔失敗: {e}")
