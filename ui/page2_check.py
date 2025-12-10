@@ -95,6 +95,24 @@ class Page2_Check(QWidget):
         # 初始狀態：隱藏不合理的按鈕 (如果在 OK 資料夾，就不顯示「轉移至 OK」)
         self.update_buttons_state()
 
+    def refresh_ui(self):
+        """強制重新整理介面 (清空舊專案殘留 + 載入新資料)"""
+        # 1. 清空大圖預覽區域 (這就是造成殘影的主因)
+        self.image_preview.clear()
+        self.image_preview.setText("請選擇照片")
+        self.current_selected_path = None
+        
+        # 2. 清空並重新讀取左側清單
+        # (load_images 裡面已經有 list_widget.clear()，所以呼叫它就夠了)
+        self.load_images()
+        
+        # 3. 更新按鈕狀態 (隱藏不該出現的按鈕)
+        self.update_buttons_state()
+
+    def showEvent(self, event):
+        self.refresh_ui()
+        super().showEvent(event)
+
     def on_folder_changed(self, index):
         """切換檢視 OK, NG 或 Unconfirmed 資料夾"""
         if index == 0:

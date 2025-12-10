@@ -278,7 +278,7 @@ class Page3_Training(QWidget):
         # 1. Epochs (訓練輪數)
         self.spin_epochs = QSpinBox()
         self.spin_epochs.setRange(1, 200)
-        self.spin_epochs.setValue(10)
+        self.spin_epochs.setValue(75)
         self.spin_epochs.setButtonSymbols(QAbstractSpinBox.NoButtons) # 隱藏上下小箭頭看起來比較現代
         self.spin_epochs.setStyleSheet("padding: 5px; background-color: #555; color: white; border: 1px solid #666; border-radius: 4px;")
         
