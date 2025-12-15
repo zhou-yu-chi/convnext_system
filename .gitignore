@@ -3,3 +3,4 @@ __pycache__/
 All_Trained_Models/
 test/
 validation_reports/
+build/

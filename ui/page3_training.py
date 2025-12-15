@@ -27,11 +27,11 @@ import datetime
 # 1. 後台工作執行緒 (避免介面卡死)
 # ==========================================
 class TrainingWorker(QThread):
-    # 定義訊號：用來跟主介面溝通
-    log_signal = Signal(str)            # 傳送文字 Log
-    progress_signal = Signal(int, int)  # 傳送進度 (目前, 總共)
-    metric_signal = Signal(dict)        # 傳送訓練數據 (Loss, Acc) 用於繪圖
-    finished_signal = Signal(bool, str) # 完成訊號 (是否成功, 訊息)
+    # ... (訊號定義保持不變) ...
+    log_signal = Signal(str)
+    progress_signal = Signal(int, int)
+    metric_signal = Signal(dict)
+    finished_signal = Signal(bool, str)
 
     def __init__(self, project_path, params):
         super().__init__()
@@ -44,20 +44,17 @@ class TrainingWorker(QThread):
         try:
             self.log_signal.emit(f"🚀 初始化訓練程序... (使用裝置: {self.device})")
             
-            # --- 步驟 1: 資料準備 (切割 Dataset) ---
+            # ... (資料準備與載入保持不變) ...
             dataset_dir = os.path.join(self.project_path, "dataset_split")
             if not self.prepare_data(dataset_dir):
                 self.finished_signal.emit(False, "資料準備失敗，請檢查原始照片是否足夠。")
                 return
 
-            # --- 步驟 2: 載入資料 ---
             dataloaders, dataset_sizes = self.get_dataloaders(dataset_dir)
             
-            # --- 步驟 3: 建立模型 ---
-            self.log_signal.emit("🧠 正在載入 ConvNeXt 模型 (這可能需要一點時間)...")
+            # ... (模型建立保持不變) ...
+            self.log_signal.emit("🧠 正在載入 ConvNeXt 模型...")
             model = models.convnext_tiny(weights='DEFAULT')
-            
-            # 修改最後一層全連接層 (配合我們的 2 個類別: OK, NG)
             num_ftrs = model.classifier[2].in_features
             model.classifier[2] = nn.Linear(num_ftrs, 2)
             model = model.to(self.device)
@@ -65,50 +62,38 @@ class TrainingWorker(QThread):
             criterion = nn.CrossEntropyLoss()
             optimizer = optim.AdamW(model.parameters(), lr=self.params['lr'])
 
-            best_acc = 0.0
             epochs = self.params['epochs']
             
-            # 建立模型儲存資料夾
+            # 設定儲存路徑 (保持不變)
             current_file_dir = os.path.dirname(os.path.abspath(__file__))
-            
-            # 2. 往上一層走，回到主程式根目錄
             root_dir = os.path.dirname(current_file_dir)
-            
-            # 3. 指定根儲存目錄
             base_save_dir = os.path.join(root_dir, "All_Trained_Models")
-            
-            # ★★★ 修改開始：建立「專案名稱」的子資料夾 ★★★
-            # 取得目前的專案名稱 (例如: ProjectA)
             project_name = os.path.basename(self.project_path)
-            
-            # 組合出最終路徑: All_Trained_Models/ProjectA
             final_save_dir = os.path.join(base_save_dir, project_name)
-            
-            # 如果這個專案的專屬資料夾不存在，就建立它
             if not os.path.exists(final_save_dir):
                 os.makedirs(final_save_dir)
-            # ★★★ 修改結束 ★★★
-
-            # 產生這次訓練專用的檔名 (包含日期時間)
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            # 建議檔名也可以加上專案名稱，比較好分辨是訓練哪個專案的模型
-            project_name = os.path.basename(self.project_path)
             model_filename = f"best_{project_name}_{timestamp}.pth"
-            
             save_path = os.path.join(final_save_dir, model_filename)
-            
-            self.log_signal.emit(f"💾 本次訓練模型將儲存至根目錄: {save_path}")
-            # ★★★ 修改重點結束 ★★★
+            self.log_signal.emit(f"💾 模型儲存路徑: {save_path}")
+
+            # =================================================
+            # ★★★ 新增早停邏輯 (Early Stopping) 變數 ★★★
+            # =================================================
+            best_acc = 0.0          # 用來決定是否存檔 (準確率越高越好)
+            min_val_loss = float('inf') # 用來決定是否早停 (Loss 越低越好)
+            patience = 30           # 寫死：容忍 30 個 Epoch 不進步
+            counter = 0             # 目前已經忍了幾次
+            early_stop_triggered = False 
+            # =================================================
 
             for epoch in range(epochs):
-                if not self.is_running: break # 允許中途停止
+                if not self.is_running: break 
 
                 self.log_signal.emit(f"\nEpoch {epoch+1}/{epochs} 開始...")
-                
                 epoch_metrics = {'epoch': epoch + 1}
 
                 for phase in ['train', 'val']:
-                    # ... (中間訓練邏輯完全不用動) ...
                     if phase == 'train':
                         model.train()
                     else:
@@ -137,26 +122,45 @@ class TrainingWorker(QThread):
                     epoch_loss = running_loss / dataset_sizes[phase]
                     epoch_acc = running_corrects.double() / dataset_sizes[phase]
                     
-                    # 記錄數據 (保持您修正過的小寫 Key)
                     prefix = "train" if phase == 'train' else "val" 
                     self.log_signal.emit(f"  - {prefix.capitalize()} Loss: {epoch_loss:.4f} | Acc: {epoch_acc:.4f}")
                     
                     epoch_metrics[f'{prefix}_loss'] = epoch_loss
                     epoch_metrics[f'{prefix}_acc'] = epoch_acc.item()
 
-                    # ★★★ 儲存最佳模型 (只看驗證集) ★★★
-                    if phase == 'val' and epoch_acc > best_acc:
-                        best_acc = epoch_acc
-                        # 這裡會覆蓋「本次訓練」的檔案，確保留下來的是這一次跑最好的那個 Epoch
-                        torch.save(model.state_dict(), save_path)
-                        self.log_signal.emit(f"  🌟 發現新高分 ({epoch_acc:.2%})！已更新模型檔案。")
+                    # --- 驗證階段：處理存檔與早停 ---
+                    if phase == 'val':
+                        # 1. 存檔邏輯 (根據準確率 Accuracy)
+                        if epoch_acc > best_acc:
+                            best_acc = epoch_acc
+                            torch.save(model.state_dict(), save_path)
+                            self.log_signal.emit(f"  🌟 準確率創新高 ({epoch_acc:.2%})！模型已儲存。")
+                        
+                        # 2. ★★★ 早停邏輯 (根據損失 Loss) ★★★
+                        if epoch_loss < min_val_loss:
+                            min_val_loss = epoch_loss
+                            counter = 0 # Loss 有下降，重置計數器
+                        else:
+                            counter += 1 # Loss 沒下降，計數器 +1
+                            self.log_signal.emit(f"  ⏳ 驗證集 Loss 未改善，耐心值: {counter}/{patience}")
+                        
+                        # 檢查是否達到早停條件
+                        if counter >= patience:
+                            early_stop_triggered = True
 
                 # 發送繪圖數據
                 self.metric_signal.emit(epoch_metrics)
                 self.progress_signal.emit(epoch + 1, epochs)
 
+                # ★★★ 檢查是否需要跳出大迴圈 ★★★
+                if early_stop_triggered:
+                    self.log_signal.emit("\n🛑 [自動早停] 觸發！")
+                    self.log_signal.emit(f"因為驗證集 Loss 連續 {patience} 個 Epoch 沒有下降，為避免過擬合，系統已自動結束訓練。")
+                    self.log_signal.emit("不用擔心，系統已經幫您保留了準確率最高的那個模型檔案。")
+                    break
+
             if self.is_running:
-                self.finished_signal.emit(True, f"訓練完成！最佳準確率: {best_acc:.2%}")
+                self.finished_signal.emit(True, f"訓練結束！\n最佳準確率: {best_acc:.2%}")
             else:
                 self.finished_signal.emit(False, "訓練已手動停止。")
 
