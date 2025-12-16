@@ -259,7 +259,18 @@ class Page4_Verification(QWidget):
         """
 
     def on_load_images(self):
-        folder = QFileDialog.getExistingDirectory(self, "選擇驗證資料夾")
+        # 1. 計算專案根目錄下的 dataset 路徑
+        current_file_dir = os.path.dirname(os.path.abspath(__file__)) # .../ui
+        root_dir = os.path.dirname(current_file_dir)                # .../ (專案根目錄)
+        start_dir = os.path.join(root_dir, "dataset")                 # 設定預設開啟 dataset 資料夾
+        
+        # 如果 dataset 資料夾還沒建立，就預設開啟根目錄
+        if not os.path.exists(start_dir):
+            start_dir = root_dir
+
+        # 2. 將 start_dir 傳入 getExistingDirectory (第三個參數)
+        folder = QFileDialog.getExistingDirectory(self, "選擇驗證資料夾", start_dir)
+        
         if folder:
             valid_exts = ('.jpg', '.jpeg', '.png', '.bmp')
             self.image_paths = []
@@ -267,21 +278,15 @@ class Page4_Verification(QWidget):
             # 使用 os.walk 遞迴搜尋資料夾
             for root, dirs, files in os.walk(folder):
                 
-                # ★★★ 新增這段：過濾掉不需要的資料夾 ★★★
-                
-                # 1. 排除 dataset_split (這是訓練用的備份，會造成重複)
+                # 過濾掉不需要的資料夾 (維持之前的邏輯)
                 if "dataset_split" in dirs:
-                    dirs.remove("dataset_split") # 告訴 os.walk 不要走進去這個資料夾
+                    dirs.remove("dataset_split") 
                 
-                # 2. (選用) 排除 ROI (如果不想驗證剛裁切完還沒分類的圖)
                 if "ROI" in dirs:
                     dirs.remove("ROI")
                     
-                # 3. (選用) 排除 Unconfirmed (如果不想驗證待確認的圖)
                 if "Unconfirmed" in dirs:
                     dirs.remove("Unconfirmed")
-
-                # --- 過濾結束 ---
 
                 for f in files:
                     if f.lower().endswith(valid_exts):

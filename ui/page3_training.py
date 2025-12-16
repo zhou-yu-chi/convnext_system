@@ -8,7 +8,7 @@ import traceback
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QLabel, QSpinBox, QDoubleSpinBox, QComboBox, 
                              QProgressBar, QTextEdit, QMessageBox, QGroupBox, 
-                             QFormLayout, QFrame, QAbstractSpinBox) # <--- 新增 QAbstractSpinBox
+                             QFormLayout, QFrame, QAbstractSpinBox, QLineEdit) 
 from PySide6.QtCore import Qt, QThread, Signal, QObject
 
 # 繪圖相關 (Matplotlib 嵌入 PySide6)
@@ -72,10 +72,22 @@ class TrainingWorker(QThread):
             final_save_dir = os.path.join(base_save_dir, project_name)
             if not os.path.exists(final_save_dir):
                 os.makedirs(final_save_dir)
+            user_name = self.params.get('model_name_user', '')
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            model_filename = f"best_{project_name}_{timestamp}.pth"
+            
+            if user_name:
+                # 如果有輸入，用「使用者名稱.pth」
+                # 為了避免覆蓋，我們還是可以偷加個短時間戳，或者是完全信任使用者
+                # 這裡示範：使用者輸入什麼就用什麼，但如果檔名重複，會自動覆蓋
+                if not user_name.lower().endswith('.pth'):
+                    user_name += ".pth"
+                model_filename = user_name
+            else:
+                # 如果沒輸入，維持原本的自動命名
+                model_filename = f"best_{project_name}_{timestamp}.pth"
+            
             save_path = os.path.join(final_save_dir, model_filename)
-            self.log_signal.emit(f"💾 模型儲存路徑: {save_path}")
+            self.log_signal.emit(f"💾 模型將儲存為: {model_filename}")
 
             # =================================================
             # ★★★ 新增早停邏輯 (Early Stopping) 變數 ★★★
@@ -276,6 +288,19 @@ class Page3_Training(QWidget):
 
         form_layout = QFormLayout()
         form_layout.setSpacing(15)
+
+        # ★★★ 新增：模型名稱輸入框 ★★★
+        self.txt_model_name = QLineEdit()
+        self.txt_model_name.setPlaceholderText("選填，留空則自動命名")
+        self.txt_model_name.setStyleSheet("padding: 5px; background-color: #555; color: white; border: 1px solid #777; border-radius: 4px;")
+        
+        self.add_param_row(
+            form_layout, 
+            "模型名稱 (Model Name)", 
+            self.txt_model_name, 
+            "自訂模型檔案的名稱。\n若不填寫，系統將自動使用 [專案名_日期時間] 命名。",
+            "(選填) 例: version1_test"
+        )
         
         # 定義通用的 ComboBox 樣式 (解決透明問題)
         # ★★★ 修正點 2：新增背景色與 ItemView 樣式 ★★★
@@ -470,7 +495,8 @@ class Page3_Training(QWidget):
             'epochs': self.spin_epochs.value(),
             'batch_size': int(self.combo_batch.currentText()),
             'lr': self.combo_lr.currentData(),
-            'split_ratio': self.spin_ratio.value()
+            'split_ratio': self.spin_ratio.value(),
+            'model_name_user': self.txt_model_name.text().strip()
         }
 
         self.worker = TrainingWorker(self.data_handler.project_path, params)
