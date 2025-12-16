@@ -193,8 +193,25 @@ class MainWindow(QMainWindow):
 
     def enter_workspace(self):
         """進入工作分頁"""
-        self.page1.refresh_ui() # 更新頁面 1 的資訊
-        self.stacked_widget.setCurrentIndex(1) # 切換卡片
+        # 1. 刷新 Page 0 (裁切頁)
+        self.page0.refresh_ui()
+        
+        # 2. 刷新 Page 1 (標註頁)
+        self.page1.refresh_ui()
+        
+        # 3. 刷新 Page 2 (檢查頁)
+        self.page2.refresh_ui()
+        
+        # 4. ★★★ 新增：重置 Page 3 (訓練頁) ★★★
+        self.page3.reset_ui()
+        
+        # 5. ★★★ 新增：重置 Page 4 (驗證頁) ★★★
+        self.page4.reset_ui()
+        
+        # 6. 切換畫面
+        self.stacked_widget.setCurrentIndex(1) 
+        # 預設跳轉到第 0 頁 (裁切頁) 或您想保留的頁面
+        self.tabs.setCurrentIndex(0)
 
     def close_project(self):
         """返回首頁"""

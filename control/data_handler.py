@@ -8,6 +8,29 @@ class DataHandler:
         self.current_index = 0     # Page 0 的指標
         self.project_path = ""
 
+    def get_import_list(self, source_folder):
+        """只負責列出符合格式的檔案清單，不進行複製"""
+        valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp')
+        if not os.path.exists(source_folder): return []
+        
+        # 找出所有符合副檔名的檔案
+        files = [f for f in os.listdir(source_folder) 
+                 if f.lower().endswith(valid_extensions)]
+        return files
+
+    def copy_file_to_project(self, source_path):
+        """複製單張檔案到專案根目錄"""
+        if not self.project_path: return False
+        try:
+            # 複製檔案
+            file_name = os.path.basename(source_path)
+            destination = os.path.join(self.project_path, file_name)
+            shutil.copy2(source_path, destination)
+            return True
+        except Exception as e:
+            print(f"複製失敗 {source_path}: {e}")
+            return False
+        
     def create_new_project(self, folder_path):
         """新增專案：建立 OK, NG, ROI 三個資料夾"""
         self.project_path = folder_path

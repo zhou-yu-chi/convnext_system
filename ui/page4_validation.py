@@ -143,6 +143,27 @@ class Page4_Verification(QWidget):
         self.worker = None
         self.init_ui()
 
+    def reset_ui(self):
+        """重置介面狀態：清空路徑、Log、準確率歸零"""
+        # 1. 清空變數
+        self.image_paths = []
+        self.model_path = ""
+        
+        # 2. 清空 Log 與進度條
+        self.txt_output.clear()  # <--- ★★★ 修正這裡：變數名稱是 txt_output ★★★
+        self.progress_bar.setValue(0)
+        
+        # 3. 重置準確率顯示
+        if hasattr(self, 'lbl_acc') and self.lbl_acc:
+             lbl_val = self.lbl_acc.layout().itemAt(1).widget()
+             lbl_val.setText("--%")
+             
+        # 4. 重置按鈕狀態
+        self.btn_start.setEnabled(False)
+        self.btn_export_model.setEnabled(False)
+        self.btn_load_images.setEnabled(True)
+        self.btn_load_model.setEnabled(True)
+
     def init_ui(self):
         # ... (這裡的介面程式碼完全不用動，維持您原本的樣子即可) ...
         main_layout = QVBoxLayout()
@@ -242,10 +263,30 @@ class Page4_Verification(QWidget):
         if folder:
             valid_exts = ('.jpg', '.jpeg', '.png', '.bmp')
             self.image_paths = []
+            
+            # 使用 os.walk 遞迴搜尋資料夾
             for root, dirs, files in os.walk(folder):
+                
+                # ★★★ 新增這段：過濾掉不需要的資料夾 ★★★
+                
+                # 1. 排除 dataset_split (這是訓練用的備份，會造成重複)
+                if "dataset_split" in dirs:
+                    dirs.remove("dataset_split") # 告訴 os.walk 不要走進去這個資料夾
+                
+                # 2. (選用) 排除 ROI (如果不想驗證剛裁切完還沒分類的圖)
+                if "ROI" in dirs:
+                    dirs.remove("ROI")
+                    
+                # 3. (選用) 排除 Unconfirmed (如果不想驗證待確認的圖)
+                if "Unconfirmed" in dirs:
+                    dirs.remove("Unconfirmed")
+
+                # --- 過濾結束 ---
+
                 for f in files:
                     if f.lower().endswith(valid_exts):
                         self.image_paths.append(os.path.join(root, f))
+                        
             self.txt_output.append(f"📂 已載入 {len(self.image_paths)} 張圖片")
             self.check_ready()
         

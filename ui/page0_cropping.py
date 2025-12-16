@@ -3,12 +3,46 @@ from PIL import Image
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QLabel, QMessageBox, QFileDialog, QListWidget, 
                              QListWidgetItem, QSplitter, QSizePolicy, QFrame, 
-                             QProgressDialog, QApplication) # 增加 QProgressDialog
-from PySide6.QtCore import Qt, QRect, QPoint, QSize
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QIcon
+                             QProgressDialog, QApplication)
+from PySide6.QtCore import Qt, QRect, QPoint, QSize, QThread, Signal # <--- 引入 QThread, Signal
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QIcon, QImage, QImageReader # <--- 引入 QImageReader
 
 # ==========================================
-# 1. 增強版 Label：支援記憶裁切框 (功能不變)
+# 0. 新增：後台縮圖載入小精靈 (解決 400 張照片卡頓的關鍵)
+# ==========================================
+class IconWorker(QThread):
+    # 定義訊號：(第幾行, 圖片物件)
+    icon_loaded = Signal(int, QImage)
+
+    def __init__(self, image_paths):
+        super().__init__()
+        self.image_paths = image_paths
+        self.is_running = True
+
+    def run(self):
+        # 在後台一張一張讀取
+        for i, path in enumerate(self.image_paths):
+            if not self.is_running: break
+            
+            # 使用 QImageReader 只讀取縮圖，速度比讀整張圖快 10 倍以上！
+            reader = QImageReader(path)
+            # 設定讀取時就直接縮小到 100x100 (節省記憶體與時間)
+            reader.setScaledSize(QSize(100, 100)) 
+            image = reader.read()
+            
+            if not image.isNull():
+                self.icon_loaded.emit(i, image) # 通知主程式：這張圖好了
+                
+                # 每處理 10 張稍微休息一下，讓介面更滑順 (可選)
+                if i % 10 == 0:
+                    QThread.msleep(5)
+
+    def stop(self):
+        self.is_running = False
+        self.wait()
+
+# ==========================================
+# 1. 增強版 Label (功能維持不變)
 # ==========================================
 class CroppableLabel(QLabel):
     def __init__(self, parent=None):
@@ -25,6 +59,7 @@ class CroppableLabel(QLabel):
         self.last_crop_rect_original = None 
 
     def set_image(self, image_path):
+        # 這裡讀大圖只讀一張，所以用 QPixmap 沒問題
         self.original_pixmap = QPixmap(image_path)
         self.update_display()
         if self.last_crop_rect_original:
@@ -132,13 +167,14 @@ class CroppableLabel(QLabel):
         self.update()
 
 # ==========================================
-# 2. 主頁面：調整版面比例 + 新增批次功能
+# 2. 主頁面
 # ==========================================
 class Page0_Cropping(QWidget):
     def __init__(self, data_handler):
         super().__init__()
         self.data_handler = data_handler
         self.current_image_path = None
+        self.icon_worker = None # 儲存 Worker 的變數
         self.init_ui()
 
     def init_ui(self):
@@ -146,9 +182,8 @@ class Page0_Cropping(QWidget):
         main_layout.setContentsMargins(10, 10, 10, 10) 
         main_layout.setSpacing(10)
         
-        # --- 1. 頂部工具列 (壓縮高度) ---
+        # --- 1. 頂部工具列 ---
         top_bar_container = QFrame()
-        # 強制設定最大高度，讓它不會佔用太多空間
         top_bar_container.setMaximumHeight(65) 
         top_bar_container.setStyleSheet("""
             QFrame {
@@ -179,7 +214,7 @@ class Page0_Cropping(QWidget):
         
         main_layout.addWidget(top_bar_container)
 
-        # --- 2. 中間區域 (放大比例) ---
+        # --- 2. 中間區域 ---
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(2)
         splitter.setStyleSheet("QSplitter::handle { background-color: #444; }")
@@ -235,11 +270,10 @@ class Page0_Cropping(QWidget):
         # 底部按鈕控制列
         btn_bar = QFrame()
         btn_bar.setStyleSheet("QFrame { background-color: #333; border-top: 1px solid #555; border-radius: 0px; }")
-        btn_bar.setMaximumHeight(60) # 限制高度
+        btn_bar.setMaximumHeight(60) 
         btn_layout = QHBoxLayout(btn_bar)
         btn_layout.setContentsMargins(10, 8, 10, 8)
 
-        
         self.btn_batch = QPushButton("⚡ 一鍵裁切全部 (Batch)")
         self.btn_batch.setMinimumHeight(40)
         self.btn_batch.setStyleSheet("""
@@ -249,7 +283,7 @@ class Page0_Cropping(QWidget):
             }
             QPushButton:hover { background-color: #9c27b0; }
         """)
-        self.btn_batch.clicked.connect(self.apply_batch_crop) # 綁定新功能
+        self.btn_batch.clicked.connect(self.apply_batch_crop) 
         
         self.btn_crop = QPushButton("✂️ 單張裁切 (Enter)")
         self.btn_crop.setMinimumHeight(40)
@@ -273,33 +307,84 @@ class Page0_Cropping(QWidget):
         splitter.addWidget(right_container)
         splitter.setStretchFactor(1, 1) 
         
-        # 這裡設定 stretch=1，確保 splitter 佔據剩餘所有垂直空間
         main_layout.addWidget(splitter, 1) 
         self.setLayout(main_layout)
 
     # --- 邏輯處理 ---
 
     def on_import_clicked(self):
-        if not self.data_handler.project_path: return
+        if not self.data_handler.project_path:
+            # 如果還沒建立專案，提示一下
+            QMessageBox.warning(self, "提示", "請先建立或開啟一個專案！")
+            return
+
         folder = QFileDialog.getExistingDirectory(self, "選擇照片資料夾")
         if folder:
-            count = self.data_handler.import_images_from_folder(folder)
-            if count > 0:
-                self.refresh_ui()
+            # 1. 先取得要匯入的檔案清單 (這一步很快)
+            files_to_import = self.data_handler.get_import_list(folder)
+            total = len(files_to_import)
+            
+            if total == 0:
+                QMessageBox.information(self, "提示", "該資料夾內沒有圖片！")
+                return
+
+            # 2. 建立進度條
+            progress = QProgressDialog("正在匯入照片中...", "取消", 0, total, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal) # 鎖定視窗避免亂按
+            progress.setMinimumDuration(0) # 確保進度條立刻顯示
+            progress.setValue(0)
+
+            count = 0
+            
+            # 3. 開始迴圈搬運
+            for i, filename in enumerate(files_to_import):
+                if progress.wasCanceled():
+                    break
+                
+                source_path = os.path.join(folder, filename)
+                
+                # 呼叫剛剛寫好的單張複製功能
+                if self.data_handler.copy_file_to_project(source_path):
+                    count += 1
+                
+                # 更新進度條
+                progress.setValue(i + 1)
+                
+                # ★ 關鍵：讓介面喘口氣，處理繪圖事件，這樣才不會「白屏」或「轉圈圈」
+                QApplication.processEvents()
+            
+            progress.close()
+
+            # 4. 全部搬完後，重新掃描並刷新畫面
+            self.data_handler.scan_unsorted_images()
+            self.refresh_ui()
+            
+            QMessageBox.information(self, "完成", f"成功匯入 {count} 張照片！")
 
     def refresh_ui(self):
+        # 0. 如果有正在跑的 Worker，先停掉，避免衝突
+        if self.icon_worker and self.icon_worker.isRunning():
+            self.icon_worker.stop()
+
         self.list_widget.clear()
         images = self.data_handler.scan_unsorted_images()
         self.lbl_info.setText(f"待處理: {len(images)} 張")
         
+        # 1. 快速建立「只有文字」的清單 (這個步驟超快，400 張也只要 0.01 秒)
         for path in images:
             filename = os.path.basename(path)
             item = QListWidgetItem(filename)
-            item.setData(Qt.UserRole, path) 
-            item.setIcon(QIcon(path))
+            item.setData(Qt.UserRole, path)
+            # ★ 注意：這裡先不設 Icon，這樣畫面會瞬間出來
             self.list_widget.addItem(item)
 
-        if self.list_widget.count() > 0:
+        # 2. 啟動後台小精靈去載入縮圖
+        if images:
+            self.icon_worker = IconWorker(images)
+            self.icon_worker.icon_loaded.connect(self.on_icon_loaded) # 接上訊號
+            self.icon_worker.start()
+
+            # 選取第一張
             self.list_widget.setCurrentRow(0)
             self.btn_crop.setEnabled(True)
             self.btn_batch.setEnabled(True)
@@ -308,6 +393,14 @@ class Page0_Cropping(QWidget):
             self.current_image_path = None
             self.btn_crop.setEnabled(False)
             self.btn_batch.setEnabled(False)
+
+    # ★ 小精靈回報訊號時執行的函式
+    def on_icon_loaded(self, row, image):
+        # 找到對應的那一行
+        item = self.list_widget.item(row)
+        if item:
+            # 把讀好的圖片轉成 Icon 放上去
+            item.setIcon(QIcon(QPixmap.fromImage(image)))
 
     def on_item_clicked(self, item):
         path = item.data(Qt.UserRole)
@@ -341,54 +434,47 @@ class Page0_Cropping(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "錯誤", str(e))
 
-    
     def apply_batch_crop(self):
-        # 1. 檢查是否有記憶的裁切框
         crop_rect = self.image_label.last_crop_rect_original
         if not crop_rect:
-            QMessageBox.warning(self, "無法執行", "請先選擇一張照片並畫好紅框，\n程式才能知道要用多大的範圍去裁切其他照片！")
+            QMessageBox.warning(self, "無法執行", "請先選擇一張照片並畫好紅框！")
             return
             
-        # 2. 取得所有待處理圖片
         images = self.data_handler.scan_unsorted_images()
         total = len(images)
         if total == 0: return
 
         reply = QMessageBox.question(self, "確認批次裁切", 
-                                   f"確定要使用目前的紅框設定，\n自動裁切剩餘的 {total} 張照片嗎？\n(這將會直接存入 ROI 並刪除原檔)",
+                                   f"確定要自動裁切剩餘的 {total} 張照片嗎？",
                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         
         if reply == QMessageBox.StandardButton.Yes:
-            # 建立進度條
+            # 停止 icon worker，避免批次處理時它還在後台讀檔案，造成搶資源
+            if self.icon_worker and self.icon_worker.isRunning():
+                self.icon_worker.stop()
+
             progress = QProgressDialog("正在批次裁切中...", "取消", 0, total, self)
             progress.setWindowModality(Qt.WindowModality.WindowModal)
             progress.setMinimumDuration(0)
             
             success_count = 0
             
-            # 3. 執行迴圈
-            # 因為 data_handler.save_crop_to_roi 會刪除檔案，所以我們對 images 副本進行操作是安全的
             for i, img_path in enumerate(images):
                 if progress.wasCanceled():
                     break
-                
                 try:
                     img = Image.open(img_path)
                     cropped_img = img.crop(crop_rect)
-                    
                     if self.data_handler.save_crop_to_roi(cropped_img, img_path):
                         success_count += 1
                 except Exception as e:
                     print(f"Skipped {img_path}: {e}")
                 
                 progress.setValue(i + 1)
-                # 讓介面保持回應
                 QApplication.processEvents()
             
             progress.close()
-            
-            # 4. 完成後刷新
-            QMessageBox.information(self, "完成", f"批次處理結束！\n成功裁切: {success_count} 張")
+            QMessageBox.information(self, "完成", f"成功裁切: {success_count} 張")
             self.refresh_ui()
 
     def move_to_next(self):

@@ -245,6 +245,22 @@ class Page3_Training(QWidget):
         self.worker = None
         self.init_ui()
 
+    def reset_ui(self):
+        """重置介面狀態：清空 Log、重置圖表與進度條"""
+        # 1. 清空 Log
+        self.txt_log.clear()
+        
+        # 2. 重置進度條
+        self.progress_bar.setValue(0)
+        
+        # 3. 重置按鈕狀態
+        self.btn_start.setEnabled(True)
+        self.btn_start.setText("🚀 開始訓練")
+        
+        # 4. 重置圖表數據與畫面
+        self.history = {'train_loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': []}
+        self.setup_chart_initial()
+
     def init_ui(self):
         main_layout = QHBoxLayout()
         main_layout.setSpacing(20)
