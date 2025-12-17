@@ -258,18 +258,15 @@ class Page3_Training(QWidget):
         self.init_ui()
 
     def reset_ui(self):
-        """重置介面狀態：清空 Log、重置圖表與進度條"""
-        # 1. 清空 Log
+        """重置介面 (加入停止訓練的邏輯)"""
+        # ★ 如果正在訓練，先強制停止
+        self.force_stop()
+
         self.txt_log.clear()
-        
-        # 2. 重置進度條
         self.progress_bar.setValue(0)
-        
-        # 3. 重置按鈕狀態
         self.btn_start.setEnabled(True)
         self.btn_start.setText("🚀 開始訓練")
-        
-        # 4. 重置圖表數據與畫面
+        self.btn_stop.setEnabled(False) # 重置時也要鎖停止按鈕
         self.history = {'train_loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': []}
         self.setup_chart_initial()
 
@@ -378,9 +375,8 @@ class Page3_Training(QWidget):
         self.spin_ratio.setSingleStep(0.1)
         self.spin_ratio.setValue(0.8)
         self.spin_ratio.setButtonSymbols(QAbstractSpinBox.NoButtons)
-        self.spin_ratio.setStyleSheet(self.spin_epochs.styleSheet()) # 沿用上面的樣式
+        self.spin_ratio.setStyleSheet("padding: 5px; background-color: #555; color: white; border: 1px solid #777; border-radius: 4px;")
         
-        # ★ 修改這裡
         self.add_param_row(
             form_layout, 
             "訓練集比例 (Split)", 
@@ -388,13 +384,14 @@ class Page3_Training(QWidget):
             "將多少比例的照片切分出來用於「訓練」，剩餘的用於「驗證」。\n0.8 代表 80% 訓練，20% 驗證。",
             "0.8 (註解:即 8:2 分配)"
         )
-        # ★★★ 修正點 1：移除按鈕 (NoButtons) ★★★
-        self.spin_ratio.setButtonSymbols(QAbstractSpinBox.NoButtons)
+    
         self.spin_ratio.setStyleSheet("padding: 5px; background-color: #555; color: white; border: 1px solid #777; border-radius: 4px;")
-        form_layout.addRow("訓練集比例:", self.spin_ratio)
-
         left_layout.addLayout(form_layout)
         left_layout.addStretch()
+
+        
+        btn_layout_container = QHBoxLayout()
+        btn_layout_container.setSpacing(10)
 
         self.btn_start = QPushButton("🚀 開始訓練")
         self.btn_start.setMinimumHeight(50)
@@ -404,7 +401,21 @@ class Page3_Training(QWidget):
             QPushButton:disabled { background-color: #555; }
         """)
         self.btn_start.clicked.connect(self.on_start_clicked)
-        left_layout.addWidget(self.btn_start)
+        
+        self.btn_stop = QPushButton("🛑 停止訓練")
+        self.btn_stop.setMinimumHeight(50)
+        self.btn_stop.setEnabled(False) # 一開始先鎖住
+        self.btn_stop.setStyleSheet("""
+            QPushButton { background-color: #c62828; color: white; font-size: 16px; font-weight: bold; border-radius: 5px; }
+            QPushButton:hover { background-color: #b71c1c; }
+            QPushButton:disabled { background-color: #444; color: #777; }
+        """)
+        self.btn_stop.clicked.connect(self.on_stop_clicked)
+
+        btn_layout_container.addWidget(self.btn_start, 7) # 開始按鈕長一點
+        btn_layout_container.addWidget(self.btn_stop, 3)  # 停止按鈕短一點
+
+        left_layout.addLayout(btn_layout_container)
 
         # --- 右側：監控面板 (70%) ---
         right_panel = QWidget()
@@ -485,8 +496,11 @@ class Page3_Training(QWidget):
             QMessageBox.warning(self, "錯誤", "尚未載入專案，請先建立或開啟專案！")
             return
 
+        # ★ 修改按鈕狀態
         self.btn_start.setEnabled(False)
         self.btn_start.setText("⏳ 訓練中...")
+        self.btn_stop.setEnabled(True)  # 解鎖停止按鈕
+
         self.txt_log.clear()
         self.history = {'train_loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': []}
         self.setup_chart_initial()
@@ -506,6 +520,69 @@ class Page3_Training(QWidget):
         self.worker.finished_signal.connect(self.on_training_finished)
         self.worker.start()
 
+    def on_stop_clicked(self):
+        """手動點擊停止按鈕"""
+        # 第一次檢查
+        if not self.worker or not self.worker.isRunning():
+            return
+
+        # 跳出確認視窗 (這是一個會卡住程式的動作)
+        reply = QMessageBox.question(
+            self, "確認停止", 
+            "您確定要中斷目前的訓練嗎？\n(系統將保留目前為止最佳的模型存檔)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # ★★★ 關鍵修正 2：再次檢查 worker 是否存在 ★★★
+            # 因為在您思考要不要按 Yes 的時候，訓練可能剛好結束了，worker 變成了 None
+            if self.worker and self.worker.isRunning():
+                self.txt_log.append("\n🛑 正在停止訓練，請稍候...")
+                self.btn_stop.setEnabled(False) 
+                self.worker.stop() 
+            else:
+                # 如果使用者按 Yes 時訓練其實已經結束了，就什麼都不用做
+                pass
+
+    def force_stop(self):
+        """給主程式呼叫用的：強制停止 (不問問題)"""
+        if self.worker and self.worker.isRunning():
+            print("正在強制停止背景訓練...")
+            self.worker.stop()
+            self.worker.wait() # 等待執行緒真正結束
+            print("訓練已停止")
+
+    def on_training_finished(self, success, message):
+        """訓練結束或停止時的處理"""
+        
+        # 1. 重置按鈕狀態
+        self.btn_start.setEnabled(True)
+        self.btn_start.setText("🚀 開始訓練")
+        self.btn_stop.setEnabled(False) 
+        
+        # 2. 顯示訊息
+        if success:
+            QMessageBox.information(self, "完成", message)
+        else:
+            if "手動停止" in message:
+                self.txt_log.append(f"\n⚠️ {message}")
+            else:
+                QMessageBox.warning(self, "中斷", message)
+        
+        # ★★★ 關鍵修正：絕對不要在這裡寫 self.worker = None ★★★
+        # 因為此時 Worker 執行緒其實還在 run() 方法的最後一行，還沒真正結束。
+        # 如果現在就把物件刪掉，程式就會直接崩潰。
+        
+        if self.worker:
+            # 我們告訴 Worker：「等你真的完全結束 (finished) 後，再把自己刪掉 (deleteLater)」
+            self.worker.finished.connect(self.worker.deleteLater)
+            self.worker.finished.connect(self._worker_cleanup) # 同時呼叫我們的清理函式
+
+    def _worker_cleanup(self):
+        """等執行緒真的結束後，才把變數設為 None"""
+        self.worker = None
+
     def append_log(self, text):
         self.txt_log.append(text)
         sb = self.txt_log.verticalScrollBar()
@@ -515,14 +592,7 @@ class Page3_Training(QWidget):
         self.progress_bar.setMaximum(total)
         self.progress_bar.setValue(current)
 
-    def on_training_finished(self, success, message):
-        self.btn_start.setEnabled(True)
-        self.btn_start.setText("🚀 開始訓練")
-        if success:
-            QMessageBox.information(self, "完成", message)
-        else:
-            QMessageBox.warning(self, "中斷", message)
-        self.worker = None
+    
 
     def set_data_handler(self, handler):
         self.data_handler = handler

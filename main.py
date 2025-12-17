@@ -214,11 +214,52 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(0)
 
     def close_project(self):
-        """返回首頁"""
-        reply = QMessageBox.question(self, "關閉專案", "確定要返回主選單嗎？", 
-                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        """返回首頁 (包含活動檢測與強制停止警語)"""
+        
+        # 1. 檢查是否有後台任務正在執行
+        # 檢查 Page 3 訓練
+        is_training = self.page3.worker is not None and self.page3.worker.isRunning()
+        # 檢查 Page 4 驗證 (假設 page4 也有 worker 屬性)
+        is_validating = hasattr(self.page4, 'worker') and self.page4.worker is not None and self.page4.worker.isRunning()
+
+        # 2. 根據狀態決定彈窗內容
+        if is_training or is_validating:
+            title = "⚠️ 強制停止警告"
+            text = (
+                "目前有正在執行的任務 (訓練或驗證)！\n\n"
+                "⛔ 關閉專案將會「強制停止」所有活動 ⛔\n"
+                "未儲存的模型或結果可能會遺失。\n\n"
+                "您確定要強制關閉並返回首頁嗎？"
+            )
+            icon = QMessageBox.Warning
+        else:
+            title = "關閉專案"
+            text = "確定要返回主選單嗎？"
+            icon = QMessageBox.Question
+
+        # 3. 顯示彈窗
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(text)
+        msg_box.setIcon(icon)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg_box.setDefaultButton(QMessageBox.StandardButton.No) # 預設選 No，避免誤按
+        
+        reply = msg_box.exec()
+        
+        # 4. 如果使用者按 Yes，執行停止與切換
         if reply == QMessageBox.StandardButton.Yes:
-            self.stacked_widget.setCurrentIndex(0) # 切回首頁
+            # 強制停止 Page 3
+            self.page3.force_stop()
+            
+            # 強制停止 Page 4 (如果 Page 4 有在跑)
+            if hasattr(self.page4, 'worker') and self.page4.worker:
+                if self.page4.worker.isRunning():
+                    self.page4.worker.stop()
+                    self.page4.worker.wait() # 等它真的停下來
+
+            # 切回首頁
+            self.stacked_widget.setCurrentIndex(0)
 
     def apply_stylesheet(self):
         style = """
