@@ -338,7 +338,7 @@ class Page3_Training(QWidget):
 
         # 2. Batch Size (批次大小)
         self.combo_batch = QComboBox()
-        self.combo_batch.addItems(["8", "16", "32", "64"])
+        self.combo_batch.addItems(["4", "8", "16", "32"])
         self.combo_batch.setCurrentText("16")
         self.combo_batch.setStyleSheet("""
             QComboBox { background-color: #555; color: white; padding: 5px; border: 1px solid #666; border-radius: 4px; }
