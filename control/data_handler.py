@@ -1,6 +1,6 @@
 import os
 import shutil
-
+import time
 class DataHandler:
     def __init__(self):
         self.all_images = []       # 給 Page 0 用：根目錄下的原始圖片
@@ -18,15 +18,35 @@ class DataHandler:
                  if f.lower().endswith(valid_extensions)]
         return files
 
-    def copy_file_to_project(self, source_path):
-        """複製單張檔案到專案根目錄"""
+    def copy_file_to_project(self, source_path, rename_if_exists=False):
+        """
+        複製單張檔案到專案根目錄
+        :param rename_if_exists: 如果為 True，遇到重複檔名會自動改名並儲存；
+                                 如果為 False，遇到重複會回傳 "DUPLICATE" 讓 UI 決定。
+        """
         if not self.project_path: return False
+        
         try:
-            # 複製檔案
             file_name = os.path.basename(source_path)
             destination = os.path.join(self.project_path, file_name)
+
+            # 1. 檢查檔案是否存在
+            if os.path.exists(destination):
+                # 情況 A: 如果還沒決定要改名，就回傳訊號叫 UI 去問使用者
+                if not rename_if_exists:
+                    return "DUPLICATE"
+                
+                # 情況 B: 使用者已經說要改名了，我們就加時間戳
+                else:
+                    name, ext = os.path.splitext(file_name)
+                    timestamp = time.strftime("%Y%m%d_%H%M%S")
+                    new_name = f"{name}_{timestamp}{ext}"
+                    destination = os.path.join(self.project_path, new_name)
+
+            # 2. 執行複製
             shutil.copy2(source_path, destination)
             return True
+
         except Exception as e:
             print(f"複製失敗 {source_path}: {e}")
             return False

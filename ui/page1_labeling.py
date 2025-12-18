@@ -110,6 +110,12 @@ class Page1_Labeling(QWidget):
         self.btn_ng.setMinimumHeight(50)
         self.btn_ng.setStyleSheet(btn_style + "QPushButton { background-color: #e57373; } QPushButton:hover { background-color: #ef5350; }")
         self.btn_ng.clicked.connect(lambda: self.classify_image("NG"))
+
+        self.btn_delete = QPushButton("🗑️ 刪除 (Del)")
+        self.btn_delete.setMinimumHeight(50)
+        # 設定為深灰色，區分 OK/NG
+        self.btn_delete.setStyleSheet(btn_style + "QPushButton { background-color: #616161; } QPushButton:hover { background-color: #757575; }")
+        self.btn_delete.clicked.connect(self.delete_image)
         
         self.btn_ok = QPushButton("⭕ OK (→)")
         self.btn_ok.setMinimumHeight(50)
@@ -117,6 +123,7 @@ class Page1_Labeling(QWidget):
         self.btn_ok.clicked.connect(lambda: self.classify_image("OK"))
 
         btn_layout.addWidget(self.btn_ng)
+        btn_layout.addWidget(self.btn_delete) 
         btn_layout.addWidget(self.btn_ok)
         
         right_layout.addWidget(self.image_display, 1)
@@ -191,6 +198,41 @@ class Page1_Labeling(QWidget):
                 self.lbl_project_info.setText(f"待分類: {self.list_widget.count()} 張")
             else:
                 self.refresh_ui()
+
+    def delete_image(self):
+        """刪除目前選取的照片"""
+        if not self.current_selected_path: return
+
+        # (選用) 為了防止手滑，可以加一個確認視窗
+        # 如果您想要極速刪除，可以把這段 if 註解掉
+        from PySide6.QtWidgets import QMessageBox # 記得確認有無 import
+        reply = QMessageBox.question(self, "確認刪除", "確定要永久刪除這張照片嗎？", 
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.No:
+            return
+
+        try:
+            # 1. 執行刪除
+            os.remove(self.current_selected_path)
+            
+            # 2. 更新 UI (移除清單項目並跳下一張)
+            row = self.list_widget.currentRow()
+            self.list_widget.takeItem(row)
+            
+            # 更新剩餘數量
+            current_count = self.list_widget.count()
+            self.lbl_project_info.setText(f"待分類: {current_count} 張")
+
+            # 選取下一張
+            if current_count > 0:
+                if row >= current_count: 
+                    row = current_count - 1
+                self.list_widget.setCurrentRow(row)
+            else:
+                self.refresh_ui() # 沒照片了，刷新介面顯示完成訊息
+
+        except Exception as e:
+            print(f"刪除失敗: {e}")
 
     # 鍵盤控制
     def keyPressEvent(self, event):

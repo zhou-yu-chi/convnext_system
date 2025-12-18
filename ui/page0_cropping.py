@@ -310,17 +310,17 @@ class Page0_Cropping(QWidget):
         main_layout.addWidget(splitter, 1) 
         self.setLayout(main_layout)
 
-    # --- 邏輯處理 ---
+    
 
+    # --- 邏輯處理 ---
     def on_import_clicked(self):
         if not self.data_handler.project_path:
-            # 如果還沒建立專案，提示一下
             QMessageBox.warning(self, "提示", "請先建立或開啟一個專案！")
             return
 
         folder = QFileDialog.getExistingDirectory(self, "選擇照片資料夾")
         if folder:
-            # 1. 先取得要匯入的檔案清單 (這一步很快)
+            # 1. 取得檔案清單
             files_to_import = self.data_handler.get_import_list(folder)
             total = len(files_to_import)
             
@@ -328,38 +328,71 @@ class Page0_Cropping(QWidget):
                 QMessageBox.information(self, "提示", "該資料夾內沒有圖片！")
                 return
 
-            # 2. 建立進度條
+            # ==========================================
+            # ★★★ 新增：預先掃描是否有重複檔名 ★★★
+            # ==========================================
+            duplicates_count = 0
+            for filename in files_to_import:
+                # 預測匯入後的路徑
+                dest_path = os.path.join(self.data_handler.project_path, filename)
+                if os.path.exists(dest_path):
+                    duplicates_count += 1
+            
+            # 預設策略：False 代表不改名 (如果遇到重複就跳過)
+            should_rename_all = False
+            
+            # 如果發現有重複，就在進度條出現「之前」先問使用者
+            if duplicates_count > 0:
+                reply = QMessageBox.question(
+                    self, 
+                    "發現重複檔案", 
+                    f"偵測到 {duplicates_count} 張照片檔名重複！\n\n"
+                    "請問您要如何處理？\n"
+                    "• [Yes] 自動改名並匯入 (保留兩者)\n"
+                    "• [No]  跳過這些檔案 (不匯入)",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                
+                if reply == QMessageBox.StandardButton.Yes:
+                    should_rename_all = True
+                else:
+                    should_rename_all = False # 選 No 就代表要跳過
+
+            # ==========================================
+            # 2. 決定好策略後，才顯示進度條開始跑
+            # ==========================================
             progress = QProgressDialog("正在匯入照片中...", "取消", 0, total, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal) # 鎖定視窗避免亂按
-            progress.setMinimumDuration(0) # 確保進度條立刻顯示
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setMinimumDuration(0)
             progress.setValue(0)
 
             count = 0
             
-            # 3. 開始迴圈搬運
             for i, filename in enumerate(files_to_import):
                 if progress.wasCanceled():
                     break
                 
                 source_path = os.path.join(folder, filename)
                 
-                # 呼叫剛剛寫好的單張複製功能
-                if self.data_handler.copy_file_to_project(source_path):
+                # 呼叫 DataHandler 進行複製
+                # 我們直接把剛剛決定好的策略 (True/False) 傳進去
+                # 如果 should_rename_all 是 True -> 它會自動改名並儲存
+                # 如果 should_rename_all 是 False -> 它遇到重複會回傳 "DUPLICATE"，我們就不計算成功
+                
+                result = self.data_handler.copy_file_to_project(source_path, rename_if_exists=should_rename_all)
+                
+                if result is True:
                     count += 1
+                # 如果 result 是 "DUPLICATE" 或 False，就代表跳過或失敗，count 不加 1
                 
-                # 更新進度條
                 progress.setValue(i + 1)
-                
-                # ★ 關鍵：讓介面喘口氣，處理繪圖事件，這樣才不會「白屏」或「轉圈圈」
                 QApplication.processEvents()
             
             progress.close()
-
-            # 4. 全部搬完後，重新掃描並刷新畫面
             self.data_handler.scan_unsorted_images()
             self.refresh_ui()
             
-            QMessageBox.information(self, "完成", f"成功匯入 {count} 張照片！")
+            QMessageBox.information(self, "完成", f"成功匯入 {count} 張照片！\n(跳過/失敗: {total - count} 張)")
 
     def refresh_ui(self):
         # 0. 如果有正在跑的 Worker，先停掉，避免衝突
