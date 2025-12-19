@@ -23,6 +23,7 @@ import torch.optim as optim
 from torchvision import datasets, models, transforms
 from torch.utils.data import DataLoader
 import datetime
+from sklearn.metrics import precision_score, recall_score, f1_score
 # ==========================================
 # 1. 後台工作執行緒 (避免介面卡死)
 # ==========================================
@@ -55,12 +56,108 @@ class TrainingWorker(QThread):
             # ... (模型建立保持不變) ...
             self.log_signal.emit("🧠 正在載入 ConvNeXt 模型...")
             model = models.convnext_tiny(weights='DEFAULT')
+            # 取得使用者選擇的策略 (0=全凍結, 1=解凍後段, 2=全解凍)
+            strategy = self.params.get('strategy', 0)
+            
+            # =========================================================
+            # ★★★ 訓練策略控制中心 ★★★
+            # =========================================================
+            
+            if strategy == 0:
+                self.log_signal.emit("❄️ 策略：全凍結 (適合少量樣本)")
+                # 1. 先凍結所有層
+                for param in model.parameters():
+                    param.requires_grad = False
+                # (分類器會在後面被覆蓋並自動解凍，所以這裡不用管)
+
+            elif strategy == 1:
+                self.log_signal.emit("🔓 策略：解凍後段 (適合中量樣本)")
+                # 1. 先凍結所有層
+                for param in model.parameters():
+                    param.requires_grad = False
+                
+                # 2. 解凍最後一個 Stage (Stage 4)
+                # ConvNeXt 的 features[7] 通常是最後一個 Stage
+                for param in model.features[7].parameters():
+                    param.requires_grad = True
+                # 也解凍它的 Downsampling 層 (features[6]) 以求連貫
+                for param in model.features[6].parameters():
+                    param.requires_grad = True
+
+            elif strategy == 2:
+                self.log_signal.emit("🔥 策略：全解凍 (適合大量樣本)")
+                # 1. 全部打開，不設定 False
+                for param in model.parameters():
+                    param.requires_grad = True
+
+            # ---------------------------------------------------------
+            # ★ 關鍵修改 2: 增加 Dropout 層
+            # 在分類器前加一個「遺忘層」，強迫模型不要太依賴某些特徵
+            # 這能進一步防止它死背
+            # ---------------------------------------------------------
             num_ftrs = model.classifier[2].in_features
-            model.classifier[2] = nn.Linear(num_ftrs, 2)
+            model.classifier[2] = nn.Sequential(
+                nn.Dropout(0.5),  # 50% 機率隨機丟棄神經元，增加強健性
+                nn.Linear(num_ftrs, 2)
+            )
+            
+            # 確保模型在正確的裝置
             model = model.to(self.device)
 
-            criterion = nn.CrossEntropyLoss()
-            optimizer = optim.AdamW(model.parameters(), lr=self.params['lr'])
+            # ★ 關鍵：Optimizer 只更新「需要更新」的參數 (requires_grad=True)
+            # 這樣寫可以自動適應上面三種策略，不用改來改去
+            optimizer = optim.AdamW(
+                filter(lambda p: p.requires_grad, model.parameters()), 
+                lr=self.params['lr']
+            )
+
+            # ==========================================
+            # ★★★ 新增：自動計算類別權重 (解決 NG 過少問題) ★★★
+            # ==========================================
+            
+            # 1. 取得訓練集資料夾路徑
+            train_dir = os.path.join(dataset_dir, 'train')
+            
+            # 2. 獲取類別對應索引 (例如: {'NG': 0, 'OK': 1})
+            # ImageFolder 會自動按字母順序排列資料夾
+            train_dataset = dataloaders['train'].dataset
+            class_to_idx = train_dataset.class_to_idx
+            
+            # 反轉字典變為 {0: 'NG', 1: 'OK'} 以便按索引順序填入權重
+            idx_to_class = {v: k for k, v in class_to_idx.items()}
+            
+            # 3. 計算每個類別的樣本數與權重
+            n_samples = []
+            for i in range(len(idx_to_class)):
+                class_name = idx_to_class[i]
+                class_path = os.path.join(train_dir, class_name)
+                # 計算該資料夾下的圖片數量
+                count = len([f for f in os.listdir(class_path) if os.path.isfile(os.path.join(class_path, f))])
+                # 避免分母為 0 (雖然理論上不會發生)
+                n_samples.append(max(count, 1))
+            
+            total_samples = sum(n_samples)
+            n_classes = len(n_samples)
+            
+            # ★ 修改：使用「開根號」來平滑權重 (Square Root Smoothing)
+            # 原本權重比是 10:1，開根號後會變成約 3:1
+            # 這能讓模型重視 NG，但不會嚇到只敢猜 NG
+            weights = [(total_samples / (n_classes * x)) ** 0.25 for x in n_samples]
+            
+            # 轉換成 Tensor 並搬移到 GPU/CPU
+            class_weights = torch.FloatTensor(weights).to(self.device)
+            
+            # 顯示 Log 讓你知道目前的權重分配
+            self.log_signal.emit(f"⚖️ 類別權重計算完成:")
+            for i, w in enumerate(weights):
+                name = idx_to_class[i]
+                count = n_samples[i]
+                self.log_signal.emit(f"   - {name} (數量:{count}): 權重 {w:.4f}")
+
+            # 4. 將權重套用到損失函數
+            criterion = nn.CrossEntropyLoss(weight=class_weights)
+            
+
 
             epochs = self.params['epochs']
             
@@ -94,7 +191,7 @@ class TrainingWorker(QThread):
             # =================================================
             best_acc = 0.0          # 用來決定是否存檔 (準確率越高越好)
             min_val_loss = float('inf') # 用來決定是否早停 (Loss 越低越好)
-            patience = 30           # 寫死：容忍 30 個 Epoch 不進步
+            patience = 15           # 寫死：容忍 15 個 Epoch 不進步
             counter = 0             # 目前已經忍了幾次
             early_stop_triggered = False 
             # =================================================
@@ -114,6 +211,9 @@ class TrainingWorker(QThread):
                     running_loss = 0.0
                     running_corrects = 0
 
+                    all_preds = []
+                    all_labels = []
+
                     for inputs, labels in dataloaders[phase]:
                         if not self.is_running: break
                         inputs = inputs.to(self.device)
@@ -128,17 +228,26 @@ class TrainingWorker(QThread):
                                 optimizer.step()
                         running_loss += loss.item() * inputs.size(0)
                         running_corrects += torch.sum(preds == labels.data)
+
+                        all_preds.extend(preds.cpu().numpy())
+                        all_labels.extend(labels.cpu().numpy())
                     
                     if not self.is_running: break
 
                     epoch_loss = running_loss / dataset_sizes[phase]
                     epoch_acc = running_corrects.double() / dataset_sizes[phase]
+
+                    epoch_precision = precision_score(all_labels, all_preds, pos_label=0, zero_division=0)
+                    epoch_recall = recall_score(all_labels, all_preds, pos_label=0, zero_division=0)
+                    epoch_f1 = f1_score(all_labels, all_preds, pos_label=0, zero_division=0)
+
+                    prefix = "train" if phase == 'train' else "val"
                     
-                    prefix = "train" if phase == 'train' else "val" 
-                    self.log_signal.emit(f"  - {prefix.capitalize()} Loss: {epoch_loss:.4f} | Acc: {epoch_acc:.4f}")
+                    self.log_signal.emit(f"  - {prefix.capitalize()} Loss: {epoch_loss:.4f} | Acc: {epoch_acc:.4f} | Recall(NG): {epoch_recall:.2%}")
                     
                     epoch_metrics[f'{prefix}_loss'] = epoch_loss
                     epoch_metrics[f'{prefix}_acc'] = epoch_acc.item()
+
 
                     # --- 驗證階段：處理存檔與早停 ---
                     if phase == 'val':
@@ -226,7 +335,19 @@ class TrainingWorker(QThread):
         data_transforms = {
             'train': transforms.Compose([
                 transforms.Resize((224, 224)),
+                
+                # --- 新增區塊 Start ---
+                # 1. 對抗光線變動：隨機調整亮度、對比、飽和度 (這是解決光線敏感的關鍵)
+                transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
+                
+                # 2. 對抗位置固定：隨機些微旋轉與平移 (模擬產線震動或工件公差)
+                transforms.RandomAffine(degrees=5, translate=(0.05, 0.05), scale=(0.95, 1.05)),
+                
+                # 3. 隨機水平/垂直翻轉 (如果瑕疵沒有方向性)
                 transforms.RandomHorizontalFlip(),
+                transforms.RandomVerticalFlip(),
+                # --- 新增區塊 End ---
+
                 transforms.ToTensor(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ]),
@@ -319,7 +440,7 @@ class Page3_Training(QWidget):
 
         # 1. Epochs (訓練輪數)
         self.spin_epochs = QSpinBox()
-        self.spin_epochs.setRange(1, 200)
+        self.spin_epochs.setRange(1, 300)
         self.spin_epochs.setValue(75)
         self.spin_epochs.setButtonSymbols(QAbstractSpinBox.NoButtons) # 隱藏上下小箭頭看起來比較現代
         self.spin_epochs.setStyleSheet("padding: 5px; background-color: #555; color: white; border: 1px solid #666; border-radius: 4px;")
@@ -367,6 +488,32 @@ class Page3_Training(QWidget):
             self.combo_lr, 
             "模型修正錯誤的步伐大小。\n設太大會學不會(震盪)，設太小會學很慢。",
             "0.0001 (註解:學習速度與精細度的平衡)"
+        )
+        # ★★★ 新增：訓練策略選擇 (Training Strategy) ★★★
+        # -----------------------------------------------------------
+        self.combo_strategy = QComboBox()
+        # addItem("顯示文字", 數值代號)
+        self.combo_strategy.addItem("❄️ 階段一：全凍結 (NG < 300張)", 0)
+        self.combo_strategy.addItem("🔓 階段二：解凍後段 (NG 300~800張)", 1)
+        self.combo_strategy.addItem("🔥 階段三：全解凍 (NG > 1000張)", 2)
+        
+        # 預設選第 0 項 (全凍結)
+        self.combo_strategy.setCurrentIndex(0)
+        
+        # 設定樣式 (沿用其他的)
+        self.combo_strategy.setStyleSheet("""
+            QComboBox { background-color: #555; color: white; padding: 5px; border: 1px solid #666; border-radius: 4px; }
+            QComboBox::drop-down { border: 0px; }
+            QComboBox QAbstractItemView { background-color: #555; color: white; selection-background-color: #00796b; }
+        """)
+
+        # 加入介面
+        self.add_param_row(
+            form_layout, 
+            "訓練策略 (Strategy)", 
+            self.combo_strategy, 
+            "決定模型有多少部分參與訓練。\n資料少時凍結(避免亂學)，資料多時解凍(提升精度)。",
+            "NG < 300 時請選「全凍結」 (註解:防止過擬合的最佳保護)"
         )
 
         # 4. Split Ratio (訓練集比例)
@@ -510,7 +657,8 @@ class Page3_Training(QWidget):
             'batch_size': int(self.combo_batch.currentText()),
             'lr': self.combo_lr.currentData(),
             'split_ratio': self.spin_ratio.value(),
-            'model_name_user': self.txt_model_name.text().strip()
+            'model_name_user': self.txt_model_name.text().strip(),
+            'strategy': self.combo_strategy.currentData()
         }
 
         self.worker = TrainingWorker(self.data_handler.project_path, params)

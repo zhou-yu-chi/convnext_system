@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QLabel, QFileDialog, QMessageBox, QProgressBar, 
                              QTextEdit, QFrame)
 from PySide6.QtCore import Qt, QThread, Signal
-
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 # ==========================================
 # 1. 後台驗證執行緒 (修改了邏輯)
 # ==========================================
@@ -39,11 +39,27 @@ class VerificationWorker(QThread):
             self.log_signal.emit(f"🚀 正在載入模型: {os.path.basename(self.model_path)}...")
             
             # --- 重建模型 ---
+            # --- 重建模型 (智慧判斷結構) ---
             model = models.convnext_tiny(weights=None)
             num_ftrs = model.classifier[2].in_features
-            model.classifier[2] = nn.Linear(num_ftrs, 2)
             
+            # 1. 先讀取權重檔，看看裡面的結構長怎樣
             state_dict = torch.load(self.model_path, map_location=self.device)
+            
+            # 2. 檢查權重檔是否包含 'classifier.2.1' (這是 Dropout 版的特徵)
+            has_dropout_layer = any("classifier.2.1" in k for k in state_dict.keys())
+            
+            if has_dropout_layer:
+                self.log_signal.emit("ℹ️ 偵測到新版模型結構 (含 Dropout)")
+                model.classifier[2] = nn.Sequential(
+                    nn.Dropout(0.5),
+                    nn.Linear(num_ftrs, 2)
+                )
+            else:
+                self.log_signal.emit("ℹ️ 偵測到舊版模型結構 (不含 Dropout)")
+                model.classifier[2] = nn.Linear(num_ftrs, 2)
+
+            # 3. 載入權重
             model.load_state_dict(state_dict)
             model.to(self.device)
             model.eval()
@@ -81,6 +97,38 @@ class VerificationWorker(QThread):
                     pred_idx = preds.item()
                     confidence = probs[0][pred_idx].item()
                     pred_label = classes[pred_idx]
+# ==================================================
+                    # ★★★ 修正後的邏輯：先判斷對錯，再加註信心警語 ★★★
+                    # ==================================================
+                    
+                    status = ""
+                    is_wrong = False
+                    
+                    # 1. 先判斷對錯 (基礎判斷)
+                    if true_label:
+                        if true_label == pred_label:
+                            status = "✅ 正確"
+                        else:
+                            status = "❌ 錯誤"
+                            is_wrong = True
+                    
+                    # 2. 檢查信心度 (如果不足，附加警語)
+                    is_unsure = False
+                    if confidence < 0.80:  # 門檻值
+                        status += " (⚠️ 信心不足)"
+                        is_unsure = True
+
+                    # 3. 決定是否存圖 (如果是錯誤 OR 信心不足，都要存)
+                    # 這樣即使猜對但信心不足，也會被抓出來
+                    if (is_wrong or is_unsure) and self.unconfirmed_dir:
+                        try:
+                            file_name = os.path.basename(img_path)
+                            dst_path = os.path.join(self.unconfirmed_dir, file_name)
+                            shutil.copy2(img_path, dst_path)
+                            status += " (已存至待確認區)"
+                            saved_count += 1
+                        except Exception as e:
+                            print(f"複製失敗: {e}")
 
                     result_item = {
                         "file_name": os.path.basename(img_path),
@@ -91,24 +139,7 @@ class VerificationWorker(QThread):
                     }
                     results.append(result_item)
                     
-                    # Log 顯示與錯誤處理
-                    status = ""
-                    if true_label:
-                        if true_label == pred_label:
-                            status = "✅ 正確"
-                        else:
-                            status = "❌ 錯誤"
-                            # ★★★ 關鍵修改：預測錯誤時，複製到 Unconfirmed 資料夾 ★★★
-                            if self.unconfirmed_dir:
-                                try:
-                                    file_name = os.path.basename(img_path)
-                                    # 為了避免檔名重複，可以加個 prefix 或是直接覆蓋 (這裡示範直接複製)
-                                    dst_path = os.path.join(self.unconfirmed_dir, file_name)
-                                    shutil.copy2(img_path, dst_path)
-                                    status += " (已存至待確認區)"
-                                    saved_count += 1
-                                except Exception as e:
-                                    print(f"複製失敗: {e}")
+                    # ==================================================
 
                     self.log_signal.emit(f"[{i+1}/{total}] {os.path.basename(img_path)} -> {pred_label} ({confidence:.1%}) {status}")
                     self.progress_signal.emit(i + 1, total)
@@ -361,22 +392,46 @@ class Page4_Verification(QWidget):
         summary = ""
         
         if len(valid_results) > 0:
-            y_true = [r['true_label'] for r in valid_results]
-            y_pred = [r['prediction'] for r in valid_results]
+            # 轉換標籤為數字 (假設 NG=0, OK=1，這要看你的 classes 定義)
+            # 這裡我們用字串比對比較保險
+            y_true_str = [r['true_label'] for r in valid_results]
+            y_pred_str = [r['prediction'] for r in valid_results]
+            
+            # 將字串標籤轉為 0(NG) 和 1(OK) 以便計算
+            # 定義：NG是正樣本(我們在乎的)，設為 1；OK 設為 0
+            # 注意：sklearn 的 pos_label 預設是 1
+            y_true = [1 if x == 'NG' else 0 for x in y_true_str]
+            y_pred = [1 if x == 'NG' else 0 for x in y_pred_str]
             
             acc = accuracy_score(y_true, y_pred)
-            correct_count = sum(1 for t, p in zip(y_true, y_pred) if t == p)
+            precision = precision_score(y_true, y_pred, zero_division=0)
+            recall = recall_score(y_true, y_pred, zero_division=0)
+            f1 = f1_score(y_true, y_pred, zero_division=0)
+            
+            # 混淆矩陣
+            tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+            # tn=OK判OK, fp=OK判NG(誤殺), fn=NG判OK(漏檢), tp=NG判NG(抓對)
+
+            correct_count = sum(1 for t, p in zip(y_true_str, y_pred_str) if t == p)
             total_count = len(y_true)
 
             self.update_metric_display(acc)
             
             summary = (
-                f"\n=== 📊 驗證結果摘要 ===\n"
+                f"\n=== 📊 驗證結果詳細報告 ===\n"
                 f"總照片數    : {total_count} 張\n"
-                f"預測正確    : {correct_count} 張\n"
-                f"預測錯誤    : {total_count - correct_count} 張\n"
+                f"準確率 (Acc): {acc:.2%}\n"
                 f"--------------------------\n"
-                f"準確率 (Accuracy) : {acc:.2%}  (即 {correct_count} ÷ {total_count})\n"
+                f"🎯 關鍵指標 (針對 NG):\n"
+                f"  ★ 檢出率 (Recall)   : {recall:.2%} (越高越好，代表沒漏抓)\n"
+                f"  ★ 精確率 (Precision): {precision:.2%} (越高代表誤殺少)\n"
+                f"  ★ F1-Score          : {f1:.4f}\n"
+                f"--------------------------\n"
+                f"🔍 混淆矩陣分析:\n"
+                f"  ✅ 正確 OK : {tn} 張\n"
+                f"  ✅ 抓到 NG : {tp} 張\n"
+                f"  ❌ 誤殺 OK : {fp} 張 (OK 被判成 NG)\n"
+                f"  💀 漏檢 NG : {fn} 張 (最危險！NG 被判成 OK)\n"
             )
         else:
             summary += "\n⚠️ 警告: 無法計算準確率，因為圖片不在 OK/NG 資料夾內。\n"
