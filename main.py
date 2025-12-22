@@ -319,6 +319,9 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(style)
 
 if __name__ == "__main__":
+    if not globals().get('__LAUNCHED_BY_LOADER__'):
+        print("非法啟動！請執行 Loader.exe") 
+        sys.exit(0)
     # 1. 嘗試取得目前已存在的 QApplication 實例 (這是從 loader.py 傳過來的)
     app = QApplication.instance()
     

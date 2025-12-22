@@ -171,6 +171,9 @@ def run_external_main():
         global_vars['__file__'] = script_path
         global_vars['__name__'] = '__main__'
 
+        # ★★★ 新增這行：設定通關密語 ★★★
+        global_vars['__LAUNCHED_BY_LOADER__'] = True 
+
         exec(code, global_vars)
 
     except Exception:
