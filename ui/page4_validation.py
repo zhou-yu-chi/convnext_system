@@ -114,16 +114,28 @@ class VerificationWorker(QThread):
                     
                     # 2. 檢查信心度 (如果不足，附加警語)
                     is_unsure = False
-                    if confidence < 0.80:  # 門檻值
+                    if confidence < 0.70:  # 門檻值
                         status += " (⚠️ 信心不足)"
                         is_unsure = True
 
-                    # 3. 決定是否存圖 (如果是錯誤 OR 信心不足，都要存)
-                    # 這樣即使猜對但信心不足，也會被抓出來
                     if (is_wrong or is_unsure) and self.unconfirmed_dir:
                         try:
                             file_name = os.path.basename(img_path)
+                            
+                            # =================================================
+                            # ★★★ 修改開始：手動實作不重複存檔邏輯 ★★★
+                            # 因為 Worker 這裡沒有 data_handler 物件，我們直接寫一個簡單的 while 檢查
+                            # =================================================
+                            name, ext = os.path.splitext(file_name)
                             dst_path = os.path.join(self.unconfirmed_dir, file_name)
+                            
+                            # 如果檔案已存在，加上時間戳記
+                            counter = 1
+                            while os.path.exists(dst_path):
+                                timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                                new_name = f"{name}_{timestamp}_{counter}{ext}"
+                                dst_path = os.path.join(self.unconfirmed_dir, new_name)
+                                counter += 1
                             shutil.copy2(img_path, dst_path)
                             status += " (已存至待確認區)"
                             saved_count += 1

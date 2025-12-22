@@ -317,9 +317,15 @@ class MainWindow(QMainWindow):
         }
         """
         self.setStyleSheet(style)
-
+'''
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
+    # 1. 嘗試取得目前已存在的 QApplication 實例 (這是從 loader.py 傳過來的)
+    app = QApplication.instance()
+    
+    # 2. 如果是單獨執行 main.py (沒有經過 loader)，app 會是 None，這時才建立新的
+    if app is None:
+        app = QApplication(sys.argv)
+
     app.setStyle("Fusion")
     # 2. ★★★ 設定「深色系」調色盤 ★★★
     dark_palette = QPalette()
@@ -346,4 +352,4 @@ if __name__ == "__main__":
     app.setPalette(dark_palette)
     window = MainWindow()
     window.show()
-    sys.exit(app.exec())
+    sys.exit(app.exec())'''

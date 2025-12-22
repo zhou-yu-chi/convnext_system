@@ -1,47 +1,71 @@
 import os
 import shutil
 import time
+import datetime
+
 class DataHandler:
     def __init__(self):
-        self.all_images = []       # 給 Page 0 用：根目錄下的原始圖片
-        self.roi_images = []       # 給 Page 1 用：ROI 資料夾下的圖片
-        self.current_index = 0     # Page 0 的指標
+        self.all_images = []       
+        self.roi_images = []       
+        self.current_index = 0     
         self.project_path = ""
 
+    # ========================================================
+    # ★★★ 核心救星：產生絕對不重複的檔名 ★★★
+    # ========================================================
+    def generate_unique_path(self, target_folder, filename):
+        """
+        傳入目標資料夾與檔名，回傳一個保證不重複的新路徑。
+        策略：如果重複，就加上 [時間戳_流水號]。
+        """
+        name, ext = os.path.splitext(filename)
+        destination = os.path.join(target_folder, filename)
+        
+        # 如果檔案不存在，直接回傳原路徑
+        if not os.path.exists(destination):
+            return destination
+        
+        # 如果檔案已存在，開始改名迴圈
+        counter = 1
+        while True:
+            # 格式：原檔名_年月日時分秒_流水號.副檔名
+            # 例如：image1_20231223103055_1.jpg
+            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            new_name = f"{name}_{timestamp}_{counter}{ext}"
+            new_destination = os.path.join(target_folder, new_name)
+            
+            if not os.path.exists(new_destination):
+                return new_destination
+            
+            counter += 1
+
+    # ========================================================
+
     def get_import_list(self, source_folder):
-        """只負責列出符合格式的檔案清單，不進行複製"""
         valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp')
         if not os.path.exists(source_folder): return []
-        
-        # 找出所有符合副檔名的檔案
-        files = [f for f in os.listdir(source_folder) 
-                 if f.lower().endswith(valid_extensions)]
+        files = [f for f in os.listdir(source_folder) if f.lower().endswith(valid_extensions)]
         return files
 
     def copy_file_to_project(self, source_path, rename_if_exists=False):
         """
-        複製單張檔案到專案根目錄
-        :param rename_if_exists: 如果為 True，遇到重複檔名會自動改名並儲存；
-                                 如果為 False，遇到重複會回傳 "DUPLICATE" 讓 UI 決定。
+        複製檔案到專案根目錄 (Page 0 匯入用)
         """
         if not self.project_path: return False
         
         try:
             file_name = os.path.basename(source_path)
+            # 預設目標路徑
             destination = os.path.join(self.project_path, file_name)
 
-            # 1. 檢查檔案是否存在
+            # 1. 檢查是否重複
             if os.path.exists(destination):
-                # 情況 A: 如果還沒決定要改名，就回傳訊號叫 UI 去問使用者
+                # 如果 UI 沒說要改名，就回傳訊號讓 UI 去問使用者
                 if not rename_if_exists:
                     return "DUPLICATE"
                 
-                # 情況 B: 使用者已經說要改名了，我們就加時間戳
-                else:
-                    name, ext = os.path.splitext(file_name)
-                    timestamp = time.strftime("%Y%m%d_%H%M%S")
-                    new_name = f"{name}_{timestamp}{ext}"
-                    destination = os.path.join(self.project_path, new_name)
+                # 如果 UI 說「全部改名」，就呼叫我們的無敵改名函式
+                destination = self.generate_unique_path(self.project_path, file_name)
 
             # 2. 執行複製
             shutil.copy2(source_path, destination)
@@ -52,108 +76,67 @@ class DataHandler:
             return False
         
     def create_new_project(self, folder_path):
-        """新增專案：建立 OK, NG, ROI 三個資料夾"""
         self.project_path = folder_path
-        
-        for name in ["OK", "NG", "ROI" ,"Unconfirmed"]:
+        # 確保 Unconfirmed 資料夾也被建立
+        for name in ["OK", "NG", "ROI", "Unconfirmed"]:
             path = os.path.join(folder_path, name)
             if not os.path.exists(path):
                 os.makedirs(path)
-            
         return self.scan_unsorted_images()
 
     def open_existing_project(self, folder_path):
-        """開啟專案"""
         self.project_path = folder_path
-        # 檢查基本結構 (至少要有 OK/NG，ROI 沒有就補建)
         if not os.path.exists(os.path.join(folder_path, "OK")) or \
            not os.path.exists(os.path.join(folder_path, "NG")):
             return False
             
-        roi_path = os.path.join(folder_path, "ROI")
-        unconfirmed_path = os.path.join(folder_path, "unconfirmed")
-        if not os.path.exists(unconfirmed_path):
-            os.makedirs(unconfirmed_path)
-        if not os.path.exists(roi_path):
-            os.makedirs(roi_path)
+        # 補建可能缺少的資料夾
+        for name in ["ROI", "Unconfirmed"]:
+            path = os.path.join(folder_path, name)
+            if not os.path.exists(path):
+                os.makedirs(path)
 
         self.scan_unsorted_images()
         return True
 
-    def import_images_from_folder(self, source_folder):
-        """匯入圖片到「專案根目錄」(給 Page 0 用)"""
-        if not self.project_path: return 0
-        valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp')
-        count = 0
-        for file in os.listdir(source_folder):
-            if file.lower().endswith(valid_extensions):
-                shutil.copy2(os.path.join(source_folder, file), 
-                             os.path.join(self.project_path, file))
-                count += 1
-        self.scan_unsorted_images()
-        return count
-
     def scan_unsorted_images(self):
-        """掃描根目錄 (Page 0 來源)"""
         self.all_images = []
-        # 重置 Index，確保重新整理後從頭看
         self.current_index = 0 
         valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp')
-
         if not os.path.exists(self.project_path): return []
 
         for file in os.listdir(self.project_path):
             full_path = os.path.join(self.project_path, file)
-            # 排除掉資料夾，只抓檔案
             if os.path.isfile(full_path) and file.lower().endswith(valid_extensions):
                 self.all_images.append(full_path)
         return self.all_images
 
     def get_current_image(self):
-        """取得 Page 0 目前要處理的那張圖"""
         if 0 <= self.current_index < len(self.all_images):
             return self.all_images[self.current_index]
         return None
 
-    # --- Page 0 專用功能 ---
+    # --- Page 0 專用 ---
     def save_crop_to_roi(self, pil_image, original_path):
-        """將 PIL 圖片存入 ROI，並刪除原始檔"""
         if not self.project_path: return False
         
         file_name = os.path.basename(original_path)
-        roi_path = os.path.join(self.project_path, "ROI", file_name)
+        roi_dir = os.path.join(self.project_path, "ROI")
+        
+        # ★★★ 使用 generate_unique_path 防止 ROI 裡面也有重複檔名
+        roi_path = self.generate_unique_path(roi_dir, file_name)
         
         try:
-            # 1. 儲存裁切後的圖到 ROI
             pil_image.save(roi_path)
-            
-            # 2. 刪除根目錄的原始圖
             os.remove(original_path)
-            
-            # 3. 重新掃描根目錄 (因為少了一張圖)
             self.scan_unsorted_images()
             return True
         except Exception as e:
             print(f"ROI 存檔失敗: {e}")
             return False
 
-    def skip_to_roi(self, original_path):
-        """不裁切，直接移動到 ROI"""
-        if not self.project_path: return False
-        file_name = os.path.basename(original_path)
-        roi_path = os.path.join(self.project_path, "ROI", file_name)
-        
-        try:
-            shutil.move(original_path, roi_path)
-            self.scan_unsorted_images()
-            return True
-        except Exception as e:
-            print(f"移動失敗: {e}")
-            return False
-
-    # --- Page 1 專用功能 ---
+    # --- Page 1 專用 ---
     def scan_roi_images(self):
-        """掃描 ROI 資料夾 (Page 1 來源)"""
         self.roi_images = []
         roi_dir = os.path.join(self.project_path, "ROI")
         valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp')
@@ -165,22 +148,18 @@ class DataHandler:
                     self.roi_images.append(full_path)
         return self.roi_images
 
-    def get_first_roi_image(self):
-        """Page 1 永遠只拿第一張 (Queue 模式)"""
-        if self.roi_images:
-            return self.roi_images[0]
-        return None
-
     def move_roi_file_to_result(self, file_path, label):
-        """將圖片從 ROI 移動到 OK 或 NG"""
+        """Page 1: 將圖片從 ROI 移動到 OK 或 NG"""
         if not self.project_path: return False
         
         file_name = os.path.basename(file_path)
-        target_path = os.path.join(self.project_path, label, file_name)
+        target_dir = os.path.join(self.project_path, label)
+        
+        # ★★★ 關鍵：移動前先檢查 OK/NG 資料夾有沒有重複的，有就改名
+        target_path = self.generate_unique_path(target_dir, file_name)
         
         try:
             shutil.move(file_path, target_path)
-            # 移完後，重新掃描 ROI，列表會少一張，下一張自動遞補
             self.scan_roi_images()
             return True
         except Exception as e:
@@ -189,7 +168,6 @@ class DataHandler:
 
     # --- Page 2 專用 ---
     def get_images_in_folder(self, folder_name):
-        # 維持原本邏輯
         target_dir = os.path.join(self.project_path, folder_name)
         if not os.path.exists(target_dir): return []
         images = []
@@ -201,13 +179,20 @@ class DataHandler:
         return images
     
     def move_specific_file(self, file_path, target_label):
-        # 維持原本邏輯 (給 Page 2 使用)
+        """Page 2: 在 OK/NG/Unconfirmed 之間移動"""
+        if not self.project_path: return False
+
         file_name = os.path.basename(file_path)
-        target_path = os.path.join(self.project_path, target_label, file_name)
+        target_dir = os.path.join(self.project_path, target_label)
+        
+        # ★★★ 關鍵：移動前確保不覆蓋現有檔案
+        target_path = self.generate_unique_path(target_dir, file_name)
+
         try:
             shutil.move(file_path, target_path)
             return True
-        except:
+        except Exception as e:
+            print(f"移動失敗: {e}")
             return False
     
     def delete_specific_file(self, path):
