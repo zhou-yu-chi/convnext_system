@@ -317,7 +317,7 @@ class MainWindow(QMainWindow):
         }
         """
         self.setStyleSheet(style)
-'''
+
 if __name__ == "__main__":
     # 1. 嘗試取得目前已存在的 QApplication 實例 (這是從 loader.py 傳過來的)
     app = QApplication.instance()
@@ -352,4 +352,4 @@ if __name__ == "__main__":
     app.setPalette(dark_palette)
     window = MainWindow()
     window.show()
-    sys.exit(app.exec())'''
+    sys.exit(app.exec())
