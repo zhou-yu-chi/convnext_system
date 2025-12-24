@@ -19,6 +19,17 @@ import matplotlib
 import matplotlib.pyplot
 import numpy
 import sklearn
+import sklearn.metrics
+import sklearn.utils
+import scipy
+import shutil
+import time
+import torch.optim
+import torch.nn 
+import torch.optim
+import matplotlib.pyplot
+import random
+import matplotlib.backends.backend_qtagg
 
 # 注意：不要 import 您的 ui 或 control 資料夾！
 # 我們希望那些資料夾保持在外部，這樣才能隨時修改。
@@ -127,19 +138,7 @@ def run_external_main():
     # ==================================================
     # ★★★ 新增：關閉啟動圖 (Splash Screen) ★★★
     # ==================================================
-    # 為什麼要寫在這裡？
-    # 因為如果這裡不關閉，等一下跳出「輸入密碼視窗」時，
-    # 視窗會被那張圖片擋住，導致你看不到也點不到！
-    try:
-        import pyi_splash
-        # 可以在圖片上更新文字 (選用)
-        # pyi_splash.update_text('Initializing...')
-        
-        # 關閉啟動圖
-        pyi_splash.close()
-    except ImportError:
-        # 如果是在開發環境 (沒打包時) 執行，會找不到 pyi_splash，直接跳過即可
-        pass
+
     # ★★★ 在這裡插入驗證 ★★★
     if not check_license_validity():
         # 驗證失敗，直接結束，不跑後面的 code

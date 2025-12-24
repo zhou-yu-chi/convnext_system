@@ -5,3 +5,5 @@ test/
 validation_reports/
 build/
 dist/
+license.dat/
+AI_System.spec/

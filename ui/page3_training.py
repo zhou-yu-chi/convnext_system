@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
 from PySide6.QtCore import Qt, QThread, Signal, QObject
 
 # 繪圖相關 (Matplotlib 嵌入 PySide6)
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 
@@ -27,6 +27,41 @@ from sklearn.metrics import precision_score, recall_score, f1_score
 # ==========================================
 # 1. 後台工作執行緒 (避免介面卡死)
 # ==========================================
+def get_safe_device():
+    # 1. 基礎檢查：是否有顯卡
+    if not torch.cuda.is_available():
+        print("ℹ️ 未偵測到 GPU，使用 CPU")
+        return torch.device('cpu')
+
+    try:
+        # 2. ★★★ 進階檢查：算力版本 (Compute Capability) ★★★
+        # 您的錯誤訊息明確指出：PyTorch 需要至少 3.7，但 K4000 只有 3.0
+        major, minor = torch.cuda.get_device_capability(0)
+        capability_score = major + minor / 10.0
+        
+        print(f"🔎 偵測到 GPU 算力版本: {capability_score} (Major: {major}, Minor: {minor})")
+        
+        # 設定最低門檻 (根據您的報錯，設為 3.7)
+        if capability_score < 3.7:
+            print(f"⚠️ GPU 算力過低 ({capability_score} < 3.7)。PyTorch 已不支援此顯卡。")
+            print("🔄 強制切換回 CPU 模式，以避免崩潰。")
+            return torch.device('cpu')
+
+        # 3. ★★★ 實戰測試：執行一次卷積運算 (觸發 cuDNN) ★★★
+        # 之前的 torch.zeros 只是搬運，這裡我們要真的「算」一次
+        # 如果 cuDNN 不支援，這行就會直接報錯，被 except 抓到
+        test_conv = nn.Conv2d(1, 1, kernel_size=1).to('cuda')
+        test_input = torch.randn(1, 1, 32, 32).to('cuda')
+        _ = test_conv(test_input)
+        
+        print(f"✅ GPU ({torch.cuda.get_device_name(0)}) 檢測與運算測試通過，將使用 CUDA 加速")
+        return torch.device('cuda')
+
+    except Exception as e:
+        print(f"⚠️ GPU 存在但無法通過運算測試 (可能是驅動或架構問題): {e}")
+        print("🔄 自動切換回 CPU 模式")
+        return torch.device('cpu')
+    
 class TrainingWorker(QThread):
     # ... (訊號定義保持不變) ...
     log_signal = Signal(str)
@@ -39,7 +74,7 @@ class TrainingWorker(QThread):
         self.project_path = project_path
         self.params = params
         self.is_running = True
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = get_safe_device()
 
     def run(self):
         try:
