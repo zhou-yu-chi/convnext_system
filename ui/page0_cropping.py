@@ -350,7 +350,7 @@ class Page0_Cropping(QWidget):
         
         # 模式下拉選單
         self.combo_mode = QComboBox()
-        self.combo_mode.addItems(["✏️ 自定義自由框 (Free)", "合金 2-3", "合金 2-5", "紙 2-3","紙2-6"])
+        self.combo_mode.addItems(["✏️ 自定義自由框 (Free)", "合金 2-3", "合金 2-5", "紙片 2-3","紙片 2-6"])
         self.combo_mode.setStyleSheet("""
             QComboBox { background-color: #444; color: white; padding: 5px; border-radius: 4px; min-width: 150px; }
             QComboBox::drop-down { border: 0px; }
@@ -429,18 +429,18 @@ class Page0_Cropping(QWidget):
         elif index == 1:
             # ★★★ 修改這裡：傳入 (x, y, w, h) ★★★
             # 範例：x=300, y=100, 寬=110, 高=100
-            self.image_label.set_mode("fixed", (250, 180, 160, 140))
+            self.image_label.set_mode("fixed", (200, 130, 260, 240))
             
         elif index == 2:
             # 範例：x=0, y=0, 寬=200, 高=200 (從左上角開始)
-            self.image_label.set_mode("fixed", (530, 450, 230, 320))
+            self.image_label.set_mode("fixed", (480, 400, 330, 420))
             
         elif index == 3:
             # 舊的寫法 (只有寬高) 依然支援，會變成需點擊放置
-            self.image_label.set_mode("fixed", (400, 220,400,525))
+            self.image_label.set_mode("fixed", (350, 170,500,625))
         elif index == 4:
             # 舊的寫法 (只有寬高) 依然支援，會變成需點擊放置
-            self.image_label.set_mode("fixed", (460, 495,250,290))
+            self.image_label.set_mode("fixed", (410, 445,350,390))
     
     def on_import_clicked(self):
         # (請複製您原本的 on_import_clicked 代碼)
