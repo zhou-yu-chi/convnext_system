@@ -112,13 +112,12 @@ class MainWindow(QMainWindow):
         self.page3 = Page3_Training()
 
         self.page3.set_data_handler(self.data_handler) # <--- 加入這行！
-        self.tabs.addTab(self.page3, "3. 模型訓練")
         self.page4 = Page4_Verification(self.data_handler)
-        self.tabs.addTab(self.page0, "0. 圖片裁切")
-        self.tabs.addTab(self.page1, "1. 照片標註")
-        self.tabs.addTab(self.page2, "2. 結果檢查")
-        self.tabs.addTab(self.page3, "3. 模型訓練")
-        self.tabs.addTab(self.page4, "4. 驗證檢測")
+        self.tabs.addTab(self.page0, "1. 圖片裁切")
+        self.tabs.addTab(self.page1, "2. 照片標註")
+        self.tabs.addTab(self.page2, "3. 結果檢查")
+        self.tabs.addTab(self.page3, "4. 模型訓練")
+        self.tabs.addTab(self.page4, "5. 驗證檢測")
         
         # 右上角關閉專案按鈕
         btn_close_project = QPushButton("❌ 關閉專案")
