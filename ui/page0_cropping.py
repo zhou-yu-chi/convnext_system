@@ -57,22 +57,38 @@ class CroppableLabel(QLabel):
         if size:
             self.fixed_size = size
         
-        # 切換模式時，重置框的位置
+        # 如果有圖片且模式是 fixed
         if self.original_pixmap and mode == "fixed":
-            # 取得畫面中心
-            cx = self.width() // 2
-            cy = self.height() // 2
-            
-            # ★ 修正1：計算螢幕上的框大小時使用 round (四捨五入) 減少誤差
-            w_screen = int(round(self.fixed_size[0] / self.scale_factor))
-            h_screen = int(round(self.fixed_size[1] / self.scale_factor))
-            
-            self.start_point = QPoint(cx - w_screen//2, cy - h_screen//2)
-            self.end_point = QPoint(cx + w_screen//2, cy + h_screen//2)
-            
-            # 更新最後的原始座標記錄
-            self.last_crop_rect_original = self.get_crop_rect_original()
-            self.update()
+            # ★ 新增邏輯：如果是 (x, y, w, h) 四個參數，直接定位
+            if len(self.fixed_size) == 4:
+                self.apply_fixed_pos()
+            else:
+                # 舊邏輯：只有寬高，放在畫面中間等待移動
+                cx = self.width() // 2
+                cy = self.height() // 2
+                w_screen = int(round(self.fixed_size[0] / self.scale_factor))
+                h_screen = int(round(self.fixed_size[1] / self.scale_factor))
+                self.start_point = QPoint(cx - w_screen//2, cy - h_screen//2)
+                self.end_point = QPoint(cx + w_screen//2, cy + h_screen//2)
+                self.update()
+
+    # ★ 新增這個函式：負責把原本圖片的 xy 轉換成螢幕上的 xy
+    def apply_fixed_pos(self):
+        if len(self.fixed_size) != 4: return
+        
+        # 解包 (x, y, w, h)
+        real_x, real_y, real_w, real_h = self.fixed_size
+        
+        # 換算成螢幕座標
+        sx = int(round(real_x / self.scale_factor)) + self.offset_x
+        sy = int(round(real_y / self.scale_factor)) + self.offset_y
+        sw = int(round(real_w / self.scale_factor))
+        sh = int(round(real_h / self.scale_factor))
+        
+        self.start_point = QPoint(sx, sy)
+        self.end_point = QPoint(sx + sw, sy + sh)
+        self.last_crop_rect_original = self.get_crop_rect_original()
+        self.update()
 
     def set_image(self, image_path):
         self.original_pixmap = QPixmap(image_path)
@@ -100,7 +116,10 @@ class CroppableLabel(QLabel):
         self.offset_x = (self.width() - self.scaled_pixmap.width()) // 2
         self.offset_y = (self.height() - self.scaled_pixmap.height()) // 2
         
-        if self.last_crop_rect_original:
+        # ★ 修改這裡：優先判斷是否為「固定座標模式」
+        if self.mode == "fixed" and len(self.fixed_size) == 4:
+            self.apply_fixed_pos()
+        elif self.last_crop_rect_original:
             self.restore_crop_box()
         self.update()
 
@@ -175,10 +194,18 @@ class CroppableLabel(QLabel):
                 self.end_point = pos
                 
             elif self.mode == "fixed":
-                # ★ 修正3：點擊時使用 round 計算，確保產生的框盡可能接近目標
-                w_screen = int(round(self.fixed_size[0] / self.scale_factor))
-                h_screen = int(round(self.fixed_size[1] / self.scale_factor))
+                # ★★★ 修正這裡：判斷是 4 個參數 (x,y,w,h) 還是 2 個參數 (w,h) ★★★
+                if len(self.fixed_size) == 4:
+                    # 如果是 4 個參數，寬高在 index 2 和 3
+                    fw, fh = self.fixed_size[2], self.fixed_size[3]
+                else:
+                    # 如果是 2 個參數，寬高在 index 0 和 1
+                    fw, fh = self.fixed_size[0], self.fixed_size[1]
+
+                w_screen = int(round(fw / self.scale_factor))
+                h_screen = int(round(fh / self.scale_factor))
                 
+                # 設定框框中心點為滑鼠點擊處
                 self.start_point = QPoint(pos.x() - w_screen//2, pos.y() - h_screen//2)
                 self.end_point = QPoint(pos.x() + w_screen//2, pos.y() + h_screen//2)
                 
@@ -196,9 +223,14 @@ class CroppableLabel(QLabel):
             self.update()
             
         elif self.mode == "fixed" and self.is_moving_box:
-            # ★ 修正4：拖曳時保持固定寬高
-            w_screen = int(round(self.fixed_size[0] / self.scale_factor))
-            h_screen = int(round(self.fixed_size[1] / self.scale_factor))
+            # ★ 修改：同樣判斷寬高來源
+            if len(self.fixed_size) == 4:
+                fw, fh = self.fixed_size[2], self.fixed_size[3]
+            else:
+                fw, fh = self.fixed_size[0], self.fixed_size[1]
+
+            w_screen = int(round(fw / self.scale_factor))
+            h_screen = int(round(fh / self.scale_factor))
             
             new_start = pos - self.move_offset
             self.start_point = new_start
@@ -238,28 +270,29 @@ class CroppableLabel(QLabel):
         real_x = int(round(x * self.scale_factor))
         real_y = int(round(y * self.scale_factor))
         
-        # ★★★ 關鍵修正 6：如果是固定模式，強制使用設定值，不進行換算 ★★★
         if self.mode == "fixed":
-            # 強制鎖定寬高為設定值 (例如 300)
-            real_w = self.fixed_size[0]
-            real_h = self.fixed_size[1]
+            # ★ 修改：強制鎖定寬高
+            if len(self.fixed_size) == 4:
+                real_w, real_h = self.fixed_size[2], self.fixed_size[3]
+            else:
+                real_w, real_h = self.fixed_size[0], self.fixed_size[1]
             
-            # 確保不會超出右/下邊界 (選用，視需求決定是否要嚴格限制)
+            # 邊界檢查 (保持原本邏輯)
             if real_x + real_w > self.original_pixmap.width():
                 real_x = self.original_pixmap.width() - real_w
             if real_y + real_h > self.original_pixmap.height():
                 real_y = self.original_pixmap.height() - real_h
-                
-            # 防止負座標
             if real_x < 0: real_x = 0
             if real_y < 0: real_y = 0
             
+            return (real_x, real_y, real_x + real_w, real_y + real_h)
         else:
-            # 自由模式：正常換算並四捨五入
+            # Free mode
+            w = intersect_rect.width()
+            h = intersect_rect.height()
             real_w = int(round(w * self.scale_factor))
             real_h = int(round(h * self.scale_factor))
-        
-        return (real_x, real_y, real_x + real_w, real_y + real_h)
+            return (real_x, real_y, real_x + real_w, real_y + real_h)
     
     def resizeEvent(self, event):
         self.update_display()
@@ -317,7 +350,7 @@ class Page0_Cropping(QWidget):
         
         # 模式下拉選單
         self.combo_mode = QComboBox()
-        self.combo_mode.addItems(["✏️ 自定義自由框 (Free)", "📏 固定 100 x 100", "📏 固定 200 x 200", "📏 固定 300 x 300"])
+        self.combo_mode.addItems(["✏️ 自定義自由框 (Free)", "合金 2-3", "合金 2-5", "紙 2-3","紙2-6"])
         self.combo_mode.setStyleSheet("""
             QComboBox { background-color: #444; color: white; padding: 5px; border-radius: 4px; min-width: 150px; }
             QComboBox::drop-down { border: 0px; }
@@ -392,16 +425,22 @@ class Page0_Cropping(QWidget):
         """處理下拉選單切換"""
         if index == 0:
             self.image_label.set_mode("free")
+            
         elif index == 1:
-            self.image_label.set_mode("fixed", (100, 100))
+            # ★★★ 修改這裡：傳入 (x, y, w, h) ★★★
+            # 範例：x=300, y=100, 寬=110, 高=100
+            self.image_label.set_mode("fixed", (250, 180, 160, 140))
+            
         elif index == 2:
-            self.image_label.set_mode("fixed", (200, 200))
+            # 範例：x=0, y=0, 寬=200, 高=200 (從左上角開始)
+            self.image_label.set_mode("fixed", (530, 450, 230, 320))
+            
         elif index == 3:
-            self.image_label.set_mode("fixed", (300, 300))
-
-    # ... (以下的函式：on_import_clicked, refresh_ui, load_image, apply_crop...等完全保持原樣，不用動) ...
-    # 為了節省篇幅，請保留您原本代碼中下半部的邏輯功能函式
-    # 只要確保 load_image 呼叫 image_label.set_image() 即可
+            # 舊的寫法 (只有寬高) 依然支援，會變成需點擊放置
+            self.image_label.set_mode("fixed", (400, 220,400,525))
+        elif index == 4:
+            # 舊的寫法 (只有寬高) 依然支援，會變成需點擊放置
+            self.image_label.set_mode("fixed", (460, 495,250,290))
     
     def on_import_clicked(self):
         # (請複製您原本的 on_import_clicked 代碼)

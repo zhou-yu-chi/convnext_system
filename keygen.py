@@ -35,7 +35,7 @@ def generate_license_key(expiration_date_str):
 
 if __name__ == "__main__":
     # 設定你想要給客戶的期限
-    expire_date = "2025-12-25"  # 範例：給兩個月
+    expire_date = "2026-1-25"  # 範例：給兩個月
     
     key = generate_license_key(expire_date)
     print(f"=== 授權資訊 ===")
