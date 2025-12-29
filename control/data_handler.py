@@ -201,3 +201,22 @@ class DataHandler:
             return True
         except:
             return False
+        
+    def save_camera_photo(self, pil_image):
+        """將相機拍攝的照片存入專案根目錄"""
+        if not self.project_path: return False
+        
+        # 自動產生檔名: capture_時間戳.jpg
+        filename = f"capture_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+        
+        # 使用現有的 generate_unique_path 確保不重複 (雖然時間戳很難重複，但以防萬一)
+        save_path = self.generate_unique_path(self.project_path, filename)
+        
+        try:
+            pil_image.save(save_path)
+            # 存檔後順便重新掃描，這樣回到 Page 0 就能看到新照片
+            self.scan_unsorted_images()
+            return True, os.path.basename(save_path)
+        except Exception as e:
+            print(f"相機存檔失敗: {e}")
+            return False, str(e)

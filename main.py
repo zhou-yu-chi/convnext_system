@@ -15,6 +15,7 @@ from ui.page1_labeling import Page1_Labeling
 from ui.page2_check import Page2_Check
 from ui.page3_training import Page3_Training
 from ui.page4_validation import Page4_Verification
+from ui.page5_camera import Page5_Camera  
 from datetime import datetime
 
 # ==========================================
@@ -113,12 +114,13 @@ class MainWindow(QMainWindow):
 
         self.page3.set_data_handler(self.data_handler) # <--- 加入這行！
         self.page4 = Page4_Verification(self.data_handler)
+        self.page5 = Page5_Camera(self.data_handler)
         self.tabs.addTab(self.page0, "1. 圖片裁切")
         self.tabs.addTab(self.page1, "2. 照片標註")
         self.tabs.addTab(self.page2, "3. 結果檢查")
         self.tabs.addTab(self.page3, "4. 模型訓練")
         self.tabs.addTab(self.page4, "5. 驗證檢測")
-        
+        self.tabs.addTab(self.page5, "6. 拍攝照片")
         # 右上角關閉專案按鈕
         btn_close_project = QPushButton("❌ 關閉專案")
         btn_close_project.setFixedSize(80, 40)
@@ -250,6 +252,10 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.StandardButton.Yes:
             # 強制停止 Page 3
             self.page3.force_stop()
+
+            # 強制停止 Page 5 相機 (新增)
+            if hasattr(self, 'page5'):
+                self.page5.stop_worker()
             
             # 強制停止 Page 4 (如果 Page 4 有在跑)
             if hasattr(self.page4, 'worker') and self.page4.worker:
