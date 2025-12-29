@@ -9,7 +9,7 @@ from sklearn.metrics import accuracy_score
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QLabel, QFileDialog, QMessageBox, QProgressBar, 
-                             QTextEdit, QFrame)
+                             QTextEdit, QFrame, QDoubleSpinBox, QCheckBox, QGroupBox) # <--- 新增 QDoubleSpinBox, QCheckBox, QGroupBox
 from PySide6.QtCore import Qt, QThread, Signal
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 # ==========================================
@@ -56,12 +56,14 @@ class VerificationWorker(QThread):
     finished_signal = Signal(list)
 
     # 2. 修改：多接收一個 unconfirmed_dir 參數
-    def __init__(self, model_path, image_paths, device_str, unconfirmed_dir):
+    def __init__(self, model_path, image_paths, device_str, unconfirmed_dir, strict_mode, strict_threshold):
         super().__init__()
         self.model_path = model_path
         self.image_paths = image_paths
         self.device = get_safe_device()
-        self.unconfirmed_dir = unconfirmed_dir # 存下來
+        self.unconfirmed_dir = unconfirmed_dir
+        self.strict_mode = strict_mode           # 新增
+        self.strict_threshold = strict_threshold # 新增
         self.is_running = True
 
 
@@ -134,14 +136,26 @@ class VerificationWorker(QThread):
                     pred_idx = preds.item()
                     confidence = probs[0][pred_idx].item()
                     pred_label = classes[pred_idx]
-# ==================================================
+
+                    # ==================================================
+                    # ★★★ 新增邏輯：嚴格模式 (Strict Mode) ★★★
+                    # 如果預測是 OK，但信心度不夠高，強制轉為 NG
+                    # ==================================================
+                    is_forced_ng = False
+                    if self.strict_mode and pred_label == 'OK' and confidence < self.strict_threshold:
+                        pred_label = 'NG' # 強制改判
+                        is_forced_ng = True
+                        # 注意：這裡雖然改了 label，但 confidence 分數我們通常維持原樣，
+                        # 或者你可以選擇是否要標記這個 confidence 已經不代表 NG 的信心了
+                    
+                    # ==================================================
                     # ★★★ 修正後的邏輯：先判斷對錯，再加註信心警語 ★★★
                     # ==================================================
                     
                     status = ""
                     is_wrong = False
                     
-                    # 1. 先判斷對錯 (基礎判斷)
+                    # 1. 先判斷對錯 (這裡的 pred_label 已經可能是被強制改過的)
                     if true_label:
                         if true_label == pred_label:
                             status = "✅ 正確"
@@ -149,9 +163,14 @@ class VerificationWorker(QThread):
                             status = "❌ 錯誤"
                             is_wrong = True
                     
-                    # 2. 檢查信心度 (如果不足，附加警語)
+                    # 補上被強制改判的註記
+                    if is_forced_ng:
+                        status += f" (🛡️ 嚴格模式: OK信心<{self.strict_threshold} 強制轉NG)"
+
+                    # 2. 檢查信心度 (原本的警語邏輯，保留)
+                    # 這裡我們可以保留，用來提示這張圖本身就很模稜兩可
                     is_unsure = False
-                    if confidence < 0.70:  # 門檻值
+                    if confidence < 0.70:  # 這是原本的「信心不足」門檻
                         status += " (⚠️ 信心不足)"
                         is_unsure = True
 
@@ -256,8 +275,13 @@ class Page4_Verification(QWidget):
 
         control_panel = QFrame()
         control_panel.setStyleSheet("background-color: #333; border-radius: 10px; padding: 10px;")
-        control_layout = QHBoxLayout(control_panel)
-
+        
+        # 改用 QVBoxLayout 讓控制面板可以放兩排東西
+        panel_layout = QVBoxLayout(control_panel) 
+        
+        # 第一排：按鈕群
+        btns_layout = QHBoxLayout()
+        
         self.btn_load_images = QPushButton("📂 匯入驗證資料夾")
         self.btn_load_images.setStyleSheet(self.get_btn_style("#0277bd"))
         self.btn_load_images.clicked.connect(self.on_load_images)
@@ -272,15 +296,47 @@ class Page4_Verification(QWidget):
         self.btn_start.setEnabled(False)
 
         self.btn_export_model = QPushButton("💾 模型匯出")
-        # 給它一個紫色 (#7b1fa2) 區分
         self.btn_export_model.setStyleSheet(self.get_btn_style("#7b1fa2"))
         self.btn_export_model.clicked.connect(self.on_export_model)
-        self.btn_export_model.setEnabled(False) # 一開始先鎖住，等選了模型才開啟
+        self.btn_export_model.setEnabled(False)
 
-        control_layout.addWidget(self.btn_load_images)
-        control_layout.addWidget(self.btn_load_model)
-        control_layout.addWidget(self.btn_start)
-        control_layout.addWidget(self.btn_export_model) # 把按鈕加進版面
+        btns_layout.addWidget(self.btn_load_images)
+        btns_layout.addWidget(self.btn_load_model)
+        btns_layout.addWidget(self.btn_start)
+        btns_layout.addWidget(self.btn_export_model)
+        
+        # 第二排：嚴格模式設定 (新增的部分)
+        settings_layout = QHBoxLayout()
+        settings_layout.setContentsMargins(0, 5, 0, 0) # 上方留點空隙
+        
+        # 1. 勾選框
+        self.chk_strict_mode = QCheckBox("🛡️ 啟用嚴格過濾模式 (Strict Mode)")
+        self.chk_strict_mode.setStyleSheet("color: white; font-weight: bold;")
+        self.chk_strict_mode.setToolTip("若勾選，當預測為 OK 但信心度低於門檻時，將強制判為 NG，以避免漏檢。")
+        self.chk_strict_mode.setChecked(True) # 預設關閉，讓使用者自己開
+        
+        # 2. 說明文字
+        lbl_strict = QLabel("OK 判定門檻:")
+        lbl_strict.setStyleSheet("color: #cfcfcf;")
+        
+        # 3. 數字調整框
+        self.spin_threshold = QDoubleSpinBox()
+        self.spin_threshold.setRange(0.5, 0.99)
+        self.spin_threshold.setSingleStep(0.05)
+        self.spin_threshold.setValue(0.70) # 預設您想要的 0.7
+        self.spin_threshold.setStyleSheet("""
+            QDoubleSpinBox { background-color: #555; color: white; padding: 5px; border-radius: 3px; }
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button { width: 20px; }
+        """)
+        
+        settings_layout.addWidget(self.chk_strict_mode)
+        settings_layout.addStretch() # 把後面的東西推到右邊
+        settings_layout.addWidget(lbl_strict)
+        settings_layout.addWidget(self.spin_threshold)
+
+        # 將兩排加入面板
+        panel_layout.addLayout(btns_layout)
+        panel_layout.addLayout(settings_layout) # 加入第二排
         
         main_layout.addWidget(control_panel)
 
@@ -400,25 +456,37 @@ class Page4_Verification(QWidget):
         self.btn_start.setEnabled(False)
         self.btn_load_images.setEnabled(False)
         self.btn_load_model.setEnabled(False)
+        self.chk_strict_mode.setEnabled(False) # 鎖定設定
+        self.spin_threshold.setEnabled(False)
+        
         self.txt_output.clear()
         self.progress_bar.setValue(0)
         self.update_metric_display(0)
         
         device = "cuda" if torch.cuda.is_available() else "cpu"
         
-        # 4. 取得 Unconfirmed 資料夾路徑
         unconfirmed_path = None
         if self.data_handler and self.data_handler.project_path:
             unconfirmed_path = os.path.join(self.data_handler.project_path, "Unconfirmed")
-        else:
-            self.txt_output.append("⚠️ 警告：目前沒有開啟專案，預測錯誤的照片將無法存檔！")
+
+        # 取得 UI 設定值
+        use_strict = self.chk_strict_mode.isChecked()
+        strict_thresh = self.spin_threshold.value()
 
         self.txt_output.append(f"🚀 開始驗證... (Device: {device})")
-        if unconfirmed_path:
-            self.txt_output.append(f"📂 錯誤照片將存至: {unconfirmed_path}")
+        if use_strict:
+            self.txt_output.append(f"🛡️ 嚴格模式已啟用：信心度 < {strict_thresh:.2f} 的 OK 將被視為 NG")
 
-        # 傳入 unconfirmed_path 給 Worker
-        self.worker = VerificationWorker(self.model_path, self.image_paths, device, unconfirmed_path)
+        # 傳入 Worker (參數變多了)
+        self.worker = VerificationWorker(
+            self.model_path, 
+            self.image_paths, 
+            device, 
+            unconfirmed_path,
+            use_strict,       # 傳入
+            strict_thresh     # 傳入
+        )
+        
         self.worker.log_signal.connect(self.txt_output.append)
         self.worker.progress_signal.connect(self.update_progress)
         self.worker.finished_signal.connect(self.on_verification_finished)
@@ -432,6 +500,8 @@ class Page4_Verification(QWidget):
         self.btn_start.setEnabled(True)
         self.btn_load_images.setEnabled(True)
         self.btn_load_model.setEnabled(True)
+        self.chk_strict_mode.setEnabled(True) # 解鎖
+        self.spin_threshold.setEnabled(True)  # 解鎖
         
         if not results:
             QMessageBox.warning(self, "結束", "無結果")
