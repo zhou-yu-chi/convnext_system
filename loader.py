@@ -101,6 +101,7 @@ def check_license_validity():
             PySide6.QtWidgets.QMessageBox.warning(None, "驗證失敗", 
                 "無效的金鑰！請確認您輸入的字串是否正確。")
             user_key = ""
+            print("test")
 
 # ========================================================
 # 2. 定義執行外部程式的邏輯 (修改後)
