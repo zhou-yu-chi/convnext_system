@@ -3,7 +3,7 @@ from PIL import Image
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QLabel, QMessageBox, QFileDialog, QListWidget, 
                              QListWidgetItem, QSplitter, QSizePolicy, QFrame, 
-                             QProgressDialog, QApplication, QComboBox, QGroupBox, QRadioButton)
+                             QProgressDialog, QApplication, QComboBox)
 from PySide6.QtCore import Qt, QRect, QPoint, QSize, QThread, Signal 
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QIcon, QImage, QImageReader
 
@@ -30,7 +30,7 @@ class IconWorker(QThread):
         self.wait()
 
 # ==========================================
-# 1. 增強版 Label (核心邏輯升級)
+# 1. 增強版 Label (支援多重裁切框)
 # ==========================================
 class CroppableLabel(QLabel):
     def __init__(self, parent=None):
@@ -47,63 +47,29 @@ class CroppableLabel(QLabel):
         self.scale_factor = 1.0
         self.offset_x = 0
         self.offset_y = 0
-        self.last_crop_rect_original = None 
-
+        
+        # 儲存多個框的列表，每個元素為 (x, y, w, h)
+        self.current_rois = [] 
+        
         self.mode = "free" 
-        self.fixed_size = (100, 100) 
 
-    def set_mode(self, mode, size=None):
+    def set_mode(self, mode, params=None):
         self.mode = mode
-        if size:
-            self.fixed_size = size
+        self.current_rois = [] # 清空當前框
         
-        # 如果有圖片且模式是 fixed
-        if self.original_pixmap and mode == "fixed":
-            # ★ 新增邏輯：如果是 (x, y, w, h) 四個參數，直接定位
-            if len(self.fixed_size) == 4:
-                self.apply_fixed_pos()
-            else:
-                # 舊邏輯：只有寬高，放在畫面中間等待移動
-                cx = self.width() // 2
-                cy = self.height() // 2
-                w_screen = int(round(self.fixed_size[0] / self.scale_factor))
-                h_screen = int(round(self.fixed_size[1] / self.scale_factor))
-                self.start_point = QPoint(cx - w_screen//2, cy - h_screen//2)
-                self.end_point = QPoint(cx + w_screen//2, cy + h_screen//2)
-                self.update()
-
-    # ★ 新增這個函式：負責把原本圖片的 xy 轉換成螢幕上的 xy
-    def apply_fixed_pos(self):
-        if len(self.fixed_size) != 4: return
+        # params 若傳入，格式統一為 list of tuples: [(x,y,w,h), (x,y,w,h)...]
+        if params:
+            # 如果是單一 tuple (x,y,w,h) 或 (w,h)，轉成 list
+            if isinstance(params, tuple):
+                self.current_rois = [params]
+            elif isinstance(params, list):
+                self.current_rois = params
         
-        # 解包 (x, y, w, h)
-        real_x, real_y, real_w, real_h = self.fixed_size
-        
-        # 換算成螢幕座標
-        sx = int(round(real_x / self.scale_factor)) + self.offset_x
-        sy = int(round(real_y / self.scale_factor)) + self.offset_y
-        sw = int(round(real_w / self.scale_factor))
-        sh = int(round(real_h / self.scale_factor))
-        
-        self.start_point = QPoint(sx, sy)
-        self.end_point = QPoint(sx + sw, sy + sh)
-        self.last_crop_rect_original = self.get_crop_rect_original()
-        self.update()
+        self.update_display()
 
     def set_image(self, image_path):
         self.original_pixmap = QPixmap(image_path)
         self.update_display()
-        
-        if self.last_crop_rect_original:
-            self.restore_crop_box()
-        else:
-            if self.mode == "fixed":
-                # 如果是新圖片且在固定模式，直接初始化一個標準框
-                self.set_mode(self.mode, self.fixed_size)
-            else:
-                self.start_point = None
-                self.end_point = None
-        self.update()
 
     def update_display(self):
         if not self.original_pixmap: return
@@ -116,29 +82,12 @@ class CroppableLabel(QLabel):
         self.offset_x = (self.width() - self.scaled_pixmap.width()) // 2
         self.offset_y = (self.height() - self.scaled_pixmap.height()) // 2
         
-        # ★ 修改這裡：優先判斷是否為「固定座標模式」
-        if self.mode == "fixed" and len(self.fixed_size) == 4:
-            self.apply_fixed_pos()
-        elif self.last_crop_rect_original:
-            self.restore_crop_box()
+        # 如果是固定模式，重置框的位置 (不支援記憶上次位置，避免切換圖片時框跑掉)
+        # 對於多框模式，我們直接使用傳入的座標，不需要額外計算
         self.update()
-
-    def restore_crop_box(self):
-        if not self.last_crop_rect_original or not self.scale_factor: return
-        rx1, ry1, rx2, ry2 = self.last_crop_rect_original
-        
-        # ★ 修正2：還原座標時使用 round，避免切換圖片時框越變越小或越大
-        sx1 = int(round(rx1 / self.scale_factor)) + self.offset_x
-        sy1 = int(round(ry1 / self.scale_factor)) + self.offset_y
-        sx2 = int(round(rx2 / self.scale_factor)) + self.offset_x
-        sy2 = int(round(ry2 / self.scale_factor)) + self.offset_y
-        
-        self.start_point = QPoint(sx1, sy1)
-        self.end_point = QPoint(sx2, sy2)
 
     def paintEvent(self, event):
         if not self.scaled_pixmap:
-            # ... (保持原本的文字顯示邏輯) ...
             painter = QPainter(self)
             painter.setPen(QColor(100, 100, 100))
             font = painter.font()
@@ -154,34 +103,55 @@ class CroppableLabel(QLabel):
         painter = QPainter(self)
         painter.drawPixmap(self.offset_x, self.offset_y, self.scaled_pixmap)
         
-        if self.start_point and self.end_point:
-            rect = QRect(self.start_point, self.end_point).normalized()
+        # 繪製所有框
+        rects_to_draw = []
+        
+        if self.mode == "free":
+            if self.start_point and self.end_point:
+                rects_to_draw.append(QRect(self.start_point, self.end_point).normalized())
+        else:
+            # 固定模式 (單框或多框)
+            for roi in self.current_rois:
+                # 解析 ROI (相容不同長度的 tuple)
+                if len(roi) == 4:
+                    rx, ry, rw, rh = roi
+                else: # 只有寬高
+                    continue
+
+                # 轉換為螢幕座標
+                sx = int(round(rx / self.scale_factor)) + self.offset_x
+                sy = int(round(ry / self.scale_factor)) + self.offset_y
+                sw = int(round(rw / self.scale_factor))
+                sh = int(round(rh / self.scale_factor))
+                
+                # 如果正在移動，加上位移量 (Apply Offset)
+                if self.is_moving_box:
+                     # 簡單實作：移動時所有框一起動，這裡是算出移動後的左上角
+                     # 因為 start_point 是滑鼠點下去時所有框的基準點，這裡簡化處理：
+                     # 我們實際上是修改 self.current_rois 的值比較好，但在 paintEvent 不改值
+                     # 改用 mouseMove 動態更新 current_rois
+                     pass
+
+                rects_to_draw.append(QRect(sx, sy, sw, sh))
+
+        # 實際畫出
+        for i, rect in enumerate(rects_to_draw):
             pen = QPen(QColor(255, 50, 50), 2, Qt.PenStyle.SolidLine)
             painter.setPen(pen)
             painter.drawRect(rect)
             painter.fillRect(rect, QColor(255, 0, 0, 30))
 
-            # 顯示尺寸文字
-            original_rect = self.get_crop_rect_original()
-            if original_rect:
-                rx1, ry1, rx2, ry2 = original_rect
-                w = rx2 - rx1
-                h = ry2 - ry1
-                text = f"{w} x {h}"
-                
-                painter.setPen(QColor(255, 255, 255))
-                painter.setFont(painter.font())
-                text_pos = rect.topLeft()
-                text_pos.setY(text_pos.y() - 5)
-                if text_pos.y() < 20:
-                    text_pos = rect.bottomLeft()
-                    text_pos.setY(text_pos.y() + 15)
-                
-                fm = painter.fontMetrics()
-                tw = fm.horizontalAdvance(text)
-                th = fm.height()
-                painter.fillRect(text_pos.x(), text_pos.y() - th + 5, tw + 6, th, QColor(0, 0, 0, 180))
-                painter.drawText(text_pos, text)
+            # 顯示編號與尺寸
+            w_real = int(rect.width() * self.scale_factor)
+            h_real = int(rect.height() * self.scale_factor)
+            text = f"#{i+1}: {w_real}x{h_real}"
+            
+            painter.setPen(QColor(255, 255, 255))
+            text_pos = rect.topLeft()
+            text_pos.setY(text_pos.y() - 5)
+            if text_pos.y() < 20: text_pos.setY(rect.bottom() + 15)
+
+            painter.drawText(text_pos, text)
 
     def mousePressEvent(self, event):
         if not self.original_pixmap: return
@@ -192,25 +162,10 @@ class CroppableLabel(QLabel):
                 self.is_drawing = True
                 self.start_point = pos
                 self.end_point = pos
-                
-            elif self.mode == "fixed":
-                # ★★★ 修正這裡：判斷是 4 個參數 (x,y,w,h) 還是 2 個參數 (w,h) ★★★
-                if len(self.fixed_size) == 4:
-                    # 如果是 4 個參數，寬高在 index 2 和 3
-                    fw, fh = self.fixed_size[2], self.fixed_size[3]
-                else:
-                    # 如果是 2 個參數，寬高在 index 0 和 1
-                    fw, fh = self.fixed_size[0], self.fixed_size[1]
-
-                w_screen = int(round(fw / self.scale_factor))
-                h_screen = int(round(fh / self.scale_factor))
-                
-                # 設定框框中心點為滑鼠點擊處
-                self.start_point = QPoint(pos.x() - w_screen//2, pos.y() - h_screen//2)
-                self.end_point = QPoint(pos.x() + w_screen//2, pos.y() + h_screen//2)
-                
+            else:
+                # 固定模式：點擊開始移動 (Group Move)
                 self.is_moving_box = True
-                self.move_offset = QPoint(w_screen//2, h_screen//2)
+                self.start_point = pos # 記錄滑鼠起始點
                 
             self.update()
 
@@ -222,77 +177,63 @@ class CroppableLabel(QLabel):
             self.end_point = pos
             self.update()
             
-        elif self.mode == "fixed" and self.is_moving_box:
-            # ★ 修改：同樣判斷寬高來源
-            if len(self.fixed_size) == 4:
-                fw, fh = self.fixed_size[2], self.fixed_size[3]
-            else:
-                fw, fh = self.fixed_size[0], self.fixed_size[1]
-
-            w_screen = int(round(fw / self.scale_factor))
-            h_screen = int(round(fh / self.scale_factor))
+        elif self.mode != "free" and self.is_moving_box:
+            # 計算滑鼠位移量
+            dx = (pos.x() - self.start_point.x()) * self.scale_factor
+            dy = (pos.y() - self.start_point.y()) * self.scale_factor
             
-            new_start = pos - self.move_offset
-            self.start_point = new_start
-            self.end_point = QPoint(new_start.x() + w_screen, new_start.y() + h_screen)
+            # 更新所有 ROI 的真實座標
+            new_rois = []
+            for roi in self.current_rois:
+                if len(roi) == 4:
+                    rx, ry, rw, rh = roi
+                    new_rois.append((rx + dx, ry + dy, rw, rh))
+            
+            self.current_rois = new_rois
+            self.start_point = pos # 更新基準點
             self.update()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.is_drawing = False
             self.is_moving_box = False
-            if self.mode == "free":
-                self.end_point = event.position().toPoint()
             self.update()
-            self.last_crop_rect_original = self.get_crop_rect_original()
 
-    def get_crop_rect_original(self):
-        """計算原始圖片上的裁切座標 (回傳真實尺寸)"""
-        if not self.start_point or not self.end_point:
-            return None
-            
-        # 1. 計算螢幕上的框
-        screen_rect = QRect(self.start_point, self.end_point).normalized()
+    def get_crop_rects(self):
+        """回傳所有裁切框的真實座標列表 [(x,y,x2,y2), ...]"""
+        results = []
         
-        # 2. 限制在圖片顯示範圍內
-        img_rect = QRect(self.offset_x, self.offset_y, self.scaled_pixmap.width(), self.scaled_pixmap.height())
-        intersect_rect = screen_rect.intersected(img_rect)
+        # 1. 自由模式
+        if self.mode == "free":
+            if self.start_point and self.end_point:
+                # 計算螢幕上的框
+                screen_rect = QRect(self.start_point, self.end_point).normalized()
+                # 限制範圍
+                img_rect = QRect(self.offset_x, self.offset_y, self.scaled_pixmap.width(), self.scaled_pixmap.height())
+                intersect = screen_rect.intersected(img_rect)
+                
+                x = (intersect.x() - self.offset_x) * self.scale_factor
+                y = (intersect.y() - self.offset_y) * self.scale_factor
+                w = intersect.width() * self.scale_factor
+                h = intersect.height() * self.scale_factor
+                
+                if w > 0 and h > 0:
+                    results.append((int(x), int(y), int(x+w), int(y+h)))
         
-        # 轉換為相對於圖片的座標
-        x = intersect_rect.x() - self.offset_x
-        y = intersect_rect.y() - self.offset_y
-        w = intersect_rect.width()
-        h = intersect_rect.height()
-        
-        if w <= 0 or h <= 0: return None
-        
-        # ★ 修正5：座標轉換使用 round 四捨五入
-        real_x = int(round(x * self.scale_factor))
-        real_y = int(round(y * self.scale_factor))
-        
-        if self.mode == "fixed":
-            # ★ 修改：強制鎖定寬高
-            if len(self.fixed_size) == 4:
-                real_w, real_h = self.fixed_size[2], self.fixed_size[3]
-            else:
-                real_w, real_h = self.fixed_size[0], self.fixed_size[1]
-            
-            # 邊界檢查 (保持原本邏輯)
-            if real_x + real_w > self.original_pixmap.width():
-                real_x = self.original_pixmap.width() - real_w
-            if real_y + real_h > self.original_pixmap.height():
-                real_y = self.original_pixmap.height() - real_h
-            if real_x < 0: real_x = 0
-            if real_y < 0: real_y = 0
-            
-            return (real_x, real_y, real_x + real_w, real_y + real_h)
+        # 2. 固定模式 (包含多框)
         else:
-            # Free mode
-            w = intersect_rect.width()
-            h = intersect_rect.height()
-            real_w = int(round(w * self.scale_factor))
-            real_h = int(round(h * self.scale_factor))
-            return (real_x, real_y, real_x + real_w, real_y + real_h)
+            for roi in self.current_rois:
+                if len(roi) == 4:
+                    rx, ry, rw, rh = roi
+                    # 邊界檢查
+                    if rx < 0: rx = 0
+                    if ry < 0: ry = 0
+                    if rx + rw > self.original_pixmap.width(): rx = self.original_pixmap.width() - rw
+                    if ry + rh > self.original_pixmap.height(): ry = self.original_pixmap.height() - rh
+                    
+                    results.append((int(rx), int(ry), int(rx+rw), int(ry+rh)))
+                    
+        return results
     
     def resizeEvent(self, event):
         self.update_display()
@@ -303,12 +244,12 @@ class CroppableLabel(QLabel):
         self.scaled_pixmap = None
         self.start_point = None
         self.end_point = None
-        self.last_crop_rect_original = None
+        self.current_rois = []
         self.clear()
         self.update()
 
 # ==========================================
-# 2. 主頁面 (加入工具列控制項)
+# 2. 主頁面
 # ==========================================
 class Page0_Cropping(QWidget):
     def __init__(self, data_handler):
@@ -323,7 +264,7 @@ class Page0_Cropping(QWidget):
         main_layout.setContentsMargins(10, 10, 10, 10) 
         main_layout.setSpacing(10)
         
-        # --- 1. 頂部工具列 (第一排) ---
+        # 工具列 1
         top_bar_container = QFrame()
         top_bar_container.setStyleSheet("QFrame { background-color: #333; border-radius: 8px; padding: 2px; }")
         top_bar = QHBoxLayout(top_bar_container)
@@ -339,7 +280,7 @@ class Page0_Cropping(QWidget):
         top_bar.addWidget(self.lbl_info)
         top_bar.addStretch()
         
-        # --- ★★★ 新增：裁切模式工具列 (第二排) ★★★ ---
+        # 工具列 2：模式選擇
         mode_bar_container = QFrame()
         mode_bar_container.setStyleSheet("QFrame { background-color: #2b2b2b; border-radius: 8px; border: 1px solid #444; }")
         mode_bar = QHBoxLayout(mode_bar_container)
@@ -348,9 +289,17 @@ class Page0_Cropping(QWidget):
         lbl_mode = QLabel("裁切模式:")
         lbl_mode.setStyleSheet("color: #fff; font-weight: bold; border: none;")
         
-        # 模式下拉選單
         self.combo_mode = QComboBox()
-        self.combo_mode.addItems(["✏️ 自定義自由框 (Free)", "合金 2-3", "合金 2-5", "紙片 2-3","紙片 2-6"])
+        # 加入新的 3-1 和 3-3 選項
+        self.combo_mode.addItems([
+            "✏️ 自定義自由框 (Free)", 
+            "合金 2-3", 
+            "合金 2-5", 
+            "紙片 2-3",
+            "紙片 2-6",
+            "3-1 (雙裁切)",   # 新增
+            "3-3 (雙裁切)"    # 新增
+        ])
         self.combo_mode.setStyleSheet("""
             QComboBox { background-color: #444; color: white; padding: 5px; border-radius: 4px; min-width: 150px; }
             QComboBox::drop-down { border: 0px; }
@@ -358,7 +307,7 @@ class Page0_Cropping(QWidget):
         """)
         self.combo_mode.currentIndexChanged.connect(self.on_mode_changed)
 
-        lbl_hint = QLabel("(固定模式下：點擊畫面可放置框，拖曳可移動框)")
+        lbl_hint = QLabel("(拖曳畫面可移動框)")
         lbl_hint.setStyleSheet("color: #888; font-style: italic; border: none; font-size: 12px;")
 
         mode_bar.addWidget(lbl_mode)
@@ -367,13 +316,12 @@ class Page0_Cropping(QWidget):
         mode_bar.addStretch()
 
         main_layout.addWidget(top_bar_container)
-        main_layout.addWidget(mode_bar_container) # 加入第二排
+        main_layout.addWidget(mode_bar_container)
 
-        # --- 2. 中間區域 ---
+        # 分割視窗
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setStyleSheet("QSplitter::handle { background-color: #444; }")
         
-        # 左側清單
         self.list_widget = QListWidget()
         self.list_widget.setIconSize(QSize(70, 70)) 
         self.list_widget.setFixedWidth(240)
@@ -381,7 +329,6 @@ class Page0_Cropping(QWidget):
         self.list_widget.itemClicked.connect(self.on_item_clicked)
         self.list_widget.itemSelectionChanged.connect(self.on_selection_changed)
         
-        # 右側畫布
         right_container = QFrame()
         right_container.setStyleSheet("background-color: #1a1a1a; border-radius: 8px;")
         right_layout = QVBoxLayout(right_container)
@@ -391,7 +338,6 @@ class Page0_Cropping(QWidget):
         self.image_label.setStyleSheet("background-color: transparent;") 
         self.image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
-        # 底部按鈕
         btn_bar = QFrame()
         btn_bar.setStyleSheet("background-color: #333; border-top: 1px solid #555; border-radius: 0px;")
         btn_bar.setMaximumHeight(60) 
@@ -422,35 +368,28 @@ class Page0_Cropping(QWidget):
     # --- 邏輯處理 ---
 
     def on_mode_changed(self, index):
-        """處理下拉選單切換"""
+        """處理下拉選單切換，設定對應的座標 (x, y, w, h)"""
         if index == 0:
             self.image_label.set_mode("free")
-            
-        elif index == 1:
-            # ★★★ 修改這裡：傳入 (x, y, w, h) ★★★
-            # 範例：x=300, y=100, 寬=110, 高=100
+        elif index == 1: # 合金 2-3
             self.image_label.set_mode("fixed", (200, 130, 260, 240))
-            
-        elif index == 2:
-            # 範例：x=0, y=0, 寬=200, 高=200 (從左上角開始)
+        elif index == 2: # 合金 2-5
             self.image_label.set_mode("fixed", (480, 400, 330, 420))
-            
-        elif index == 3:
-            # 舊的寫法 (只有寬高) 依然支援，會變成需點擊放置
-            self.image_label.set_mode("fixed", (350, 170,500,625))
-        elif index == 4:
-            # 舊的寫法 (只有寬高) 依然支援，會變成需點擊放置
-            self.image_label.set_mode("fixed", (410, 445,350,390))
-    
-    def on_import_clicked(self):
-        # (請複製您原本的 on_import_clicked 代碼)
-        super().on_import_clicked() if hasattr(super(), 'on_import_clicked') else None # 僅示意，請貼上原代碼
-
-    # 這裡我把原本的 refresh_ui 等函式簡寫，您直接用原本的即可
-    # 唯一要注意的是，如果您原本是用 self.btn_crop.clicked.connect... 綁定
-    # 記得確認上面的 init_ui 已經綁定好了
-    
-    # 為了讓您方便複製，我把剩下的關鍵函式貼上：
+        elif index == 3: # 紙片 2-3
+            self.image_label.set_mode("fixed", (350, 170, 500, 625))
+        elif index == 4: # 紙片 2-6
+            self.image_label.set_mode("fixed", (410, 445, 350, 390))
+        elif index == 5: # 3-1 (雙裁切)
+            # 傳入 List 包含兩個 tuple
+            self.image_label.set_mode("fixed", [
+                (250, 570, 180, 140), # Crop 1
+                (680, 410, 160, 130)  # Crop 2
+            ])
+        elif index == 6: # 3-3 (雙裁切)
+            self.image_label.set_mode("fixed", [
+                (340, 580, 170, 130), # Crop 1
+                (790, 700, 190, 140)  # Crop 2
+            ])
 
     def on_import_clicked(self):
         if not self.data_handler.project_path:
@@ -463,20 +402,22 @@ class Page0_Cropping(QWidget):
             if total == 0:
                 QMessageBox.information(self, "提示", "該資料夾內沒有圖片！")
                 return
+            
+            # 檢查重複
             duplicates_count = 0
             for filename in files_to_import:
                 dest_path = os.path.join(self.data_handler.project_path, filename)
                 if os.path.exists(dest_path): duplicates_count += 1
+            
             should_rename_all = False
             if duplicates_count > 0:
                 reply = QMessageBox.question(self, "發現重複檔案", f"偵測到 {duplicates_count} 張照片檔名重複！\n是否自動改名並匯入？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
                 if reply == QMessageBox.StandardButton.Yes: should_rename_all = True
-                else: should_rename_all = False
             
             progress = QProgressDialog("正在匯入照片中...", "取消", 0, total, self)
             progress.setWindowModality(Qt.WindowModality.WindowModal)
             progress.setMinimumDuration(0)
-            progress.setValue(0)
+            
             count = 0
             for i, filename in enumerate(files_to_import):
                 if progress.wasCanceled(): break
@@ -485,6 +426,7 @@ class Page0_Cropping(QWidget):
                 if result is True: count += 1
                 progress.setValue(i + 1)
                 QApplication.processEvents()
+            
             progress.close()
             self.data_handler.scan_unsorted_images()
             self.refresh_ui()
@@ -495,11 +437,13 @@ class Page0_Cropping(QWidget):
         self.list_widget.clear()
         images = self.data_handler.scan_unsorted_images()
         self.lbl_info.setText(f"待處理: {len(images)} 張")
+        
         for path in images:
             filename = os.path.basename(path)
             item = QListWidgetItem(filename)
             item.setData(Qt.UserRole, path)
             self.list_widget.addItem(item)
+            
         if images:
             self.icon_worker = IconWorker(images)
             self.icon_worker.icon_loaded.connect(self.on_icon_loaded)
@@ -534,44 +478,94 @@ class Page0_Cropping(QWidget):
 
     def apply_crop(self):
         if not self.current_image_path: return
-        crop_box = self.image_label.get_crop_rect_original()
-        if not crop_box:
+        crop_rects = self.image_label.get_crop_rects() # 取得所有框
+        if not crop_rects:
             QMessageBox.warning(self, "錯誤", "請先畫框！")
             return
+        
         try:
             img = Image.open(self.current_image_path)
-            cropped_img = img.crop(crop_box)
-            success = self.data_handler.save_crop_to_roi(cropped_img, self.current_image_path)
-            if success: self.move_to_next()
+            success_count = 0
+            
+            # === 多框處理邏輯 ===
+            # DataHandler.save_crop_to_roi 會刪除原始檔案
+            # 所以如果有兩個以上的框，前 N-1 個要手動存檔，最後一個才呼叫 DataHandler
+            
+            roi_folder = os.path.join(self.data_handler.project_path, "ROI")
+            base_name = os.path.basename(self.current_image_path)
+            
+            for i, rect in enumerate(crop_rects):
+                cropped_img = img.crop(rect)
+                
+                # 如果這是最後一張裁切，呼叫 DataHandler (會觸發刪除原檔)
+                if i == len(crop_rects) - 1:
+                    if self.data_handler.save_crop_to_roi(cropped_img, self.current_image_path):
+                        success_count += 1
+                else:
+                    # 如果不是最後一張，我們手動儲存到 ROI 資料夾，避免原檔被刪除
+                    # 產生唯一檔名，例如 image_1.jpg
+                    name_part, ext = os.path.splitext(base_name)
+                    new_name = f"{name_part}_{i+1}{ext}"
+                    save_path = self.data_handler.generate_unique_path(roi_folder, new_name)
+                    cropped_img.save(save_path)
+                    success_count += 1
+            
+            if success_count > 0:
+                self.move_to_next()
+                
         except Exception as e:
             QMessageBox.critical(self, "錯誤", str(e))
 
     def apply_batch_crop(self):
-        crop_rect = self.image_label.last_crop_rect_original
-        if not crop_rect:
-            QMessageBox.warning(self, "無法執行", "請先選擇一張照片並畫好紅框！")
+        # 取得當前設定的所有框
+        crop_rects = self.image_label.get_crop_rects()
+        if not crop_rects:
+            QMessageBox.warning(self, "無法執行", "請先選擇一張照片並畫好框！")
             return
+            
         images = self.data_handler.scan_unsorted_images()
         total = len(images)
         if total == 0: return
-        reply = QMessageBox.question(self, "確認批次裁切", f"確定要自動裁切剩餘的 {total} 張照片嗎？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        reply = QMessageBox.question(self, "確認批次裁切", 
+                                   f"確定要依據目前的設定 (共 {len(crop_rects)} 個框)\n自動裁切剩餘的 {total} 張照片嗎？", 
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
         if reply == QMessageBox.StandardButton.Yes:
             if self.icon_worker and self.icon_worker.isRunning(): self.icon_worker.stop()
+            
             progress = QProgressDialog("正在批次裁切中...", "取消", 0, total, self)
             progress.setWindowModality(Qt.WindowModality.WindowModal)
             progress.setMinimumDuration(0)
-            success_count = 0
-            for i, img_path in enumerate(images):
+            
+            roi_folder = os.path.join(self.data_handler.project_path, "ROI")
+            
+            for idx, img_path in enumerate(images):
                 if progress.wasCanceled(): break
                 try:
                     img = Image.open(img_path)
-                    cropped_img = img.crop(crop_rect)
-                    if self.data_handler.save_crop_to_roi(cropped_img, img_path): success_count += 1
+                    base_name = os.path.basename(img_path)
+                    
+                    for i, rect in enumerate(crop_rects):
+                        cropped_img = img.crop(rect)
+                        
+                        # 邏輯同上：最後一張才刪除原始圖
+                        if i == len(crop_rects) - 1:
+                            self.data_handler.save_crop_to_roi(cropped_img, img_path)
+                        else:
+                            name_part, ext = os.path.splitext(base_name)
+                            new_name = f"{name_part}_{i+1}{ext}"
+                            save_path = self.data_handler.generate_unique_path(roi_folder, new_name)
+                            cropped_img.save(save_path)
+                            
                 except: pass
-                progress.setValue(i + 1)
+                
+                progress.setValue(idx + 1)
                 QApplication.processEvents()
+                
             progress.close()
-            QMessageBox.information(self, "完成", f"成功裁切: {success_count} 張")
+            # 批次完成後重新掃描
+            self.data_handler.scan_roi_images() 
             self.refresh_ui()
 
     def move_to_next(self):
