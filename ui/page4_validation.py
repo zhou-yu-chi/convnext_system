@@ -323,7 +323,7 @@ class Page4_Verification(QWidget):
         self.spin_threshold = QDoubleSpinBox()
         self.spin_threshold.setRange(0.5, 0.99)
         self.spin_threshold.setSingleStep(0.05)
-        self.spin_threshold.setValue(0.70) # 預設您想要的 0.7
+        self.spin_threshold.setValue(0.50) # 預設您想要的 0.7
         self.spin_threshold.setStyleSheet("""
             QDoubleSpinBox { background-color: #555; color: white; padding: 5px; border-radius: 3px; }
             QDoubleSpinBox::up-button, QDoubleSpinBox::down-button { width: 20px; }

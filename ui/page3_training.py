@@ -476,7 +476,7 @@ class Page3_Training(QWidget):
         # 1. Epochs (訓練輪數)
         self.spin_epochs = QSpinBox()
         self.spin_epochs.setRange(1, 300)
-        self.spin_epochs.setValue(75)
+        self.spin_epochs.setValue(100)
         self.spin_epochs.setButtonSymbols(QAbstractSpinBox.NoButtons) # 隱藏上下小箭頭看起來比較現代
         self.spin_epochs.setStyleSheet("padding: 5px; background-color: #555; color: white; border: 1px solid #666; border-radius: 4px;")
         
@@ -486,7 +486,7 @@ class Page3_Training(QWidget):
             "訓練輪數 (Epochs)", 
             self.spin_epochs, 
             "模型完整看過一次所有照片稱為 1 個 Epoch。\n次數越多模型學得越久，但也可能導致過度擬合 (Overfitting)。",
-            "50~100 (註解:訓練的回合數)"
+            "50~200 (註解:訓練的回合數)"
         )
 
         # 2. Batch Size (批次大小)
