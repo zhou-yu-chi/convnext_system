@@ -71,9 +71,22 @@ class VerificationWorker(QThread):
     def run(self):
         results = []
         try:
-            # 如果有設定 Unconfirmed 資料夾，先確保它存在
-            if self.unconfirmed_dir and not os.path.exists(self.unconfirmed_dir):
-                os.makedirs(self.unconfirmed_dir)
+            # =========================================================
+            # ★★★ 新增：驗證開始前，強制清空舊的 Unconfirmed 資料夾 ★★★
+            # =========================================================
+            if self.unconfirmed_dir:
+                if os.path.exists(self.unconfirmed_dir):
+                    self.log_signal.emit("🧹 正在清空舊的待確認區照片...")
+                    try:
+                        # 遞迴刪除整個資料夾
+                        shutil.rmtree(self.unconfirmed_dir)
+                        # 刪完後馬上重建一個空的
+                        os.makedirs(self.unconfirmed_dir)
+                    except Exception as e:
+                        self.log_signal.emit(f"⚠️ 清空資料夾失敗: {e}")
+                else:
+                    # 如果原本不存在，就直接建立
+                    os.makedirs(self.unconfirmed_dir)
 
             self.log_signal.emit(f"🚀 正在載入模型: {os.path.basename(self.model_path)}...")
             
@@ -170,7 +183,7 @@ class VerificationWorker(QThread):
                     # 2. 檢查信心度 (原本的警語邏輯，保留)
                     # 這裡我們可以保留，用來提示這張圖本身就很模稜兩可
                     is_unsure = False
-                    if confidence < 0.70:  # 這是原本的「信心不足」門檻
+                    if confidence < 0.80:  # 這是原本的「信心不足」門檻
                         status += " (⚠️ 信心不足)"
                         is_unsure = True
 
@@ -233,6 +246,7 @@ class VerificationWorker(QThread):
 # 2. 頁面四 UI (修改 init 接收 data_handler)
 # ==========================================
 class Page4_Verification(QWidget):
+    verification_complete = Signal(list)
     # 3. 修改：__init__ 接收 data_handler
     def __init__(self, data_handler):
         super().__init__()
@@ -557,6 +571,7 @@ class Page4_Verification(QWidget):
 
         self.txt_output.append(summary)
         self.save_report(results, summary)
+        self.verification_complete.emit(results)
 
     def on_export_model(self):
         """匯出目前選擇的模型檔案"""

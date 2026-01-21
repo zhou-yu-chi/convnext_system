@@ -15,6 +15,7 @@ from ui.page1_labeling import Page1_Labeling
 from ui.page2_check import Page2_Check
 from ui.page3_training import Page3_Training
 from ui.page4_validation import Page4_Verification
+from ui.page6_results import Page6_ResultReview
 from datetime import datetime
 
 # ==========================================
@@ -113,11 +114,16 @@ class MainWindow(QMainWindow):
 
         self.page3.set_data_handler(self.data_handler) # <--- 加入這行！
         self.page4 = Page4_Verification(self.data_handler)
+        self.page6 = Page6_ResultReview()
         self.tabs.addTab(self.page0, "1. 圖片裁切")
         self.tabs.addTab(self.page1, "2. 照片標註")
         self.tabs.addTab(self.page2, "3. 結果檢查")
         self.tabs.addTab(self.page3, "4. 模型訓練")
         self.tabs.addTab(self.page4, "5. 驗證檢測")
+        self.tabs.addTab(self.page6, "6. 錯誤分析")
+
+        # 當 Page 4 驗證完成，自動把結果傳給 Page 6 顯示
+        self.page4.verification_complete.connect(self.page6.update_results)
         
         # 右上角關閉專案按鈕
         btn_close_project = QPushButton("❌ 關閉專案")
@@ -206,7 +212,7 @@ class MainWindow(QMainWindow):
         
         # 5. ★★★ 新增：重置 Page 4 (驗證頁) ★★★
         self.page4.reset_ui()
-        
+        self.page6.clear_ui()
         # 6. 切換畫面
         self.stacked_widget.setCurrentIndex(1) 
         # 預設跳轉到第 0 頁 (裁切頁) 或您想保留的頁面
