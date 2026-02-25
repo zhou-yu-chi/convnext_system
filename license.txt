@@ -1,0 +1,112 @@
+END USER LICENSE AGREEMENT FOR THE PREFACTOR TECHNOLOGY & RESEARCH CORPORATION PRODUCT FAMILY 
+(V.20250708) 
+
+This is a legal agreement between Licensee or You ("Licensee" or "You") and Prefactor Technology & Research Corporation ("PrefactorTech"). Licensee and PrefactorTech are also referred to individually as "Party" and collectively as "Parties". PrefactorTech is willing to license this Software to Licensee only upon the condition that Licensee shall accept all of the terms and conditions contained in this end user license agreement ("Agreement"). Please read the terms and conditions carefully as continuing with the setup procedure, installing or otherwise using the Software will indicate Licensee's acceptance of all of the terms and conditions of this Agreement including the warranty disclaimers and limitations of liability provisions below ("Acceptance"). If Licensee does not agree to the terms and conditions, Licensee may not setup, install or otherwise use the Software and shall destroy or return the Software, all copies and accompanying documentation thereof.
+
+EVALUATION LICENSE. If You are licensing the Software for evaluation purposes, Your use of the Software is only permitted in a non-production and non-commercial environment and for the period limited by the license key. The Evaluation License is granted for the sole purpose of testing the Software and determining its fitness and suitability for your specific purposes before purchasing a commercial license. Notwithstanding any other provision in this EULA, an Evaluation License of the Software is provided "AS-IS" without indemnification, support or warranty of any kind, expressed or implied. 
+
+1. Definitions
+
+"Intellectual Property Right" shall mean patents, petty patents, utility models, designs (whether or not capable of registration), design patents, inventions, database rights, protection of works of authorship or expression, including copyrights and future copyright, domain names, trademarks, trade names and any other industrial and intellectual property rights, whether registered or not and applications, divisions, continuations, renewals, re-exams and reissues for any of the aforementioned respectively as well as any trade secrets, and the rights to prosecute, enforce and obtain remedies.
+
+"Licensee or You" shall be taken as referring to the natural person or legal entity who has acquired this license to use the Software.
+
+"Third Party Component" means software components including but not limited to Open Source Software, embedded in or accompanying the Software and provided under separate license terms.
+
+"Software" is a PrefactorTech product or any part of it within the PrefactorTech product family as listed on Your order from PrefactorTech, including end-user documentation, other accompanying documentation, add-ons, extensions, libraries, fixes, plug-ins and other related materials and to any and all copies, updates, modifications, functionally-equivalent derivatives, documentation or any parts or portions thereof.
+
+2. Grant of License
+
+The Software is owned by PrefactorTech. It is licensed, not sold.
+
+Upon Acceptance and subject to Licensee's compliance with the terms and conditions of this Agreement PrefactorTech grants Licensee a non-transferable, non-exclusive, non-sub-licensable limited license in object code form to install and use the Software on one or more supported devices owned or controlled by Licensee in accordance with the obligations and limited rights and restrictions set forth in this agreement and respecting all the laws in force in the jurisdiction in which the Software is used, in accordance with the order:
+
+Standalone License: To install this Software on a standalone computer system. Each additional installation of the Software requires an additional Software license. You may transfer the Software license to a different standalone computer system only if You remove the previous installation completely. Standalone License does not give any right to, and the Licensee may not make the Software available for simultaneous use by multiple users over a network, install the Software on a server and allow users to access it remotely, or install the Software in virtual machine.
+
+Local Network License: To install this Software on multiple computer systems. An arbitrary number of users may install the Software, but the maximum number of concurrently running instances is limited according to Your order. Each additional concurrent user of the Software requires an additional Software license. The network on which the NLS version is installed may only serve licenses to client machines which are (i) owned and operated by Licensee, and (ii) assigned to and used exclusively by employees of Licensee in the country of Licensee's principal place of business.
+
+Global Network License: To install this Software on multiple computer systems. An arbitrary number of users may install the Software, but the maximum number of concurrently running instances is limited according to Your order. Each additional concurrent user of the Software requires an additional Software license. The network on which the NLS version is installed may only serve licenses to client machines which are (i) owned and operated by Licensee or its Affiliated Companies, and (ii) assigned to and used exclusively by employees of Licensee or its Affiliated Companies.
+
+Network License Server ("NLS"): PrefactorTech provides You with a network license server that manages the use of network licenses. The NLS version of the Software must be installed on a network server which is not public or publicly exposed, with an embedded software security mechanism that will permit only the number of licenses you have acquired to be in use at one time.
+
+Backup Copy: You may make copies of the Software and the Software license as reasonably necessary for the use authorized above, solely for backup and/or archival purposes. No other copies may be made. Each copy must reproduce all copyright and other proprietary rights notices on or in the Software.
+
+3. Copyright
+
+The Software is protected by copyright laws, international treaty provisions and other applicable national laws. The Software may not be reproduced in any form save for the sole purpose of making a backup copy or for archival purposes. Licensee may neither reproduce the accompanying documentation.
+
+4. Restrictions
+
+EDUCATIONAL LICENSE may be used for educational purposes only. RESEARCH LICENSE may be used for research purposes only. PROJECT LICENSE may be used for project purposes only as agreed with PrefactorTech in a separate agreement.
+
+TIME LIMITED LICENSE is granted for the duration of the applicable time limited license period (including any subsequent renewal period) and it shall remain in force until expired or terminated. 
+
+SUBSCRIPTION LICENSE is granted for the duration of the applicable subscription license period (including any subsequent renewal period).  Renewal of the Subscription license period shall be automatic until terminated by either Party upon sixty (60) days' written notice prior to the expiration of the then ongoing subscription license period.
+
+Software is not designed or intended to be run on a virtual machine or over remote desktop. PrefactorTech does not provide any support in relation to this. 
+
+Software is not designed or intended for use in critical safety systems including but not limited to nuclear facilities, aircraft communication and aircraft control systems or other situations in which case of failure of the Software could lead to death or personal injury.
+
+Licensee shall not use the Software for purposes the Software is not intended or licensed to. Any use for unauthorized purposes may result in additional charges and/or termination of the license.
+
+Licensee shall not: (i) use, copy, modify, or transfer the Software or any copy, modification, or merged portion, in whole or in part, except as expressly provided for in this Agreement; (ii) modify, alter, adapt, translate, reverse-engineer (except included Open source libraries), decompile, disassemble or attempt to discover the source code, underlying ideas, algorithms, file formats or programming interfaces of the Licensed Software, Documentation, or any portion thereof or attempt to do so; (iii) remove or cause to be removed any copyright, trademark, patent or any other proprietary legend or notices from any copy of the Licensed Software or Documentation, or any portion thereof; (iv) Licensee shall not rent, lease, sub-license, or transfer the Software; or (v) use the Software to offer timesharing or other computer based services to third parties 
+
+5. Ownership; Proprietary Rights and Notices
+
+PrefactorTech or its licensors, as applicable, shall retain all right, title and interest in and to the Software all copies and portions thereof, and all improvements, enhancements, modifications and derivative works thereof, and all Intellectual Property Rights therein. Licensee acknowledges and agrees that PrefactorTech, or its licensors, holds the Intellectual Property Rights to the Software and, except as expressly provided herein, Licensee is not granted any other right or license to patents, copyrights, trade secrets, or trademarks with respect to the Software. Licensee shall not use PrefactorTech's name, trademarks, or any PrefactorTech designation in association with Licensee's application software.
+
+Third Party Components; Additional Terms; The Software may contain or be delivered with one or more components, which may include third-party software identified by PrefactorTech in the installer, documentation, about-box, readme.txt file, third-party click-accept or elsewhere (e.g. on www. prefactortech.com) (the "Third Party Component(s)") as being subject to different license agreement terms, disclaimers of warranties, maintenance, limited warranties or other terms and conditions (collectively, "Additional Terms") than those set forth herein. You agree to the applicable Additional Terms for any such Identified Component(s).
+
+If the OEM supplier is willing to use MPEG software license, it is the obligation of the OEM supplier to sign an additional MPEG license contract directly with MPEG LA. PrefactorTech is not responsible, if Customer is not fulfilling this license obligation or is using technical workarounds.
+
+6. Termination
+
+The license is effective until terminated or, in case of TIME LIMITED LICENSE, upon expiration of the time limited license period. This Agreement will terminate automatically if Licensee fails to comply with its terms and conditions. 
+
+Except in cases of TIME LIMITED LICENSE and SUBSCRIPTION LICENSE, Licensee may at any time terminate this Agreement by destroying the Software and all copies and reproductions of the Software and deleting and permanently purging the Software from any server or computer on which it has been installed.
+
+PrefactorTech may terminate this Agreement immediately and refund the license fee paid by the Licensee, in cases of TIME LIMITED LICENSE and SUBSCRIPTION LICENSE the license fee paid in advance for times after termination is effective, should any Software become, or in PrefactorTech's reasonable opinion be likely to become, the subject of a claim of infringement of a patent, trade secret or copyright.
+
+Upon termination for any reason, the Licensee shall cease to use the Software, destroy all copies of the Software, all of its component parts, functionally-equivalent derivatives, and all portions and modifications thereof in any form and delete and permanently purge the Software from any server or computer on which it has been installed. The Licensee shall upon request provide PrefactorTech with a certificate on the fulfillment of Licensee's obligations hereunder. 
+
+7. Protection and Confidentiality
+
+7.1 Protection
+
+Licensee acknowledges and agrees that the Software constitutes and contains valuable Intellectual Property Rights of PrefactorTech and of its applicable licensors. Licensee will at all times recognize and act consistently with PrefactorTech's and its applicable licensors' Intellectual Property Rights in the Software, regardless of whether patents have been issued thereon, and will not in any way act, or fail to act in any manner, to intentionally or negligently harm such Intellectual Property Rights.
+
+7.2 Confidentiality
+
+For purposes of this Agreement, "Confidential Information" shall mean the Software and any other information, software or technical data provided by PrefactorTech. Licensee hereby agrees (i) to hold Confidential Information in strict confidence and not to disclose or otherwise make it available or disclose it to any third party except as is necessary for the proper performance of its regulatory obligations or in accordance with its rights under this Agreement; (ii) to impose confidentiality restrictions upon the Parties to whom any Confidential Information is disclosed; (iii) to take at least the same precautions to protect the Confidential Information as it takes for its own confidential and proprietary information of like importance, but in no event less than reasonable precautions; and (iv) to refrain from using the Confidential Information for any purpose other than the purposes for which that Confidential Information was disclosed.
+
+8. Limited Warranty: Disclaimers
+
+PrefactorTech warrants that the Software substantially conforms to the written description of the Software provided by PrefactorTech for a period of ninety (90) days from the date of delivery to Licensee ("Warranty Period").
+
+Remedies: Licensee's sole and exclusive remedy and the entire liability of PrefactorTech and its suppliers under this limited warranty will be at PrefactorTech's option either repair, replace or terminate the applicable License and refund the License fee paid for the Software, in both cases subject to the condition that any error or defect constituting a breach of this limited warranty is reported to PrefactorTech within the warranty period.
+
+Restrictions: This limited warranty does not apply if the Software,(i) has been altered, except by PrefactorTech or its authorized representative, (ii) has not been installed, operated, repaired, or maintained in accordance with instructions supplied by PrefactorTech, (iii) has been subjected to abnormal physical or electrical stress, abnormal environmental conditions, misuse, negligence, or accident; or (iv) is licensed for beta, evaluation, testing training, demonstration or similar purposes; or (v) in case of breach of the terms and conditions in this Agreement.
+
+Disclaimer: EXCEPT AS SPECIFIED IN THIS WARRANTY SECTION, THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. ALL EXPRESS OR IMPLIED CONDITIONS, REPRESENTATIONS, AND WARRANTIES INCLUDING, WITHOUT LIMITATION, ANY IMPLIED WARRANTY OR CONDITION OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, SATISFACTORY QUALITY, NON-INTERFERENCE, ACCURACY OF INFORMATIONAL CONTENT, OR ARISING FROM A COURSE OF DEALING, LAW, USAGE, OR TRADE PRACTICE, ARE HEREBY EXCLUDED TO THE EXTENT ALLOWED BY APPLICABLE LAW AND ARE EXPRESSLY DISCLAIMED BY PREFACTORTECH, ITS SUPPLIERS AND LICENSORS. TO THE EXTENT THAT ANY OF THE SAME CANNOT BE EXCLUDED, SUCH IMPLIED CONDITION, REPRESENTATION AND/OR WARRANTY IS LIMITED IN DURATION TO THE EXPRESS WARRANTY PERIOD REFERRED TO IN THE "LIMITED WARRANTY" SECTION ABOVE. IN NO EVENT DOES PREFACTORTECH WARRANT THAT THE FUNCTIONS CONTAINED IN THIS SOFTWARE WILL MEET LICENSEE'S REQUIREMENTS OR THAT THE OPERATION OF THIS SOFTWARE WILL BE UNINTERRUPTED OR ERROR-FREE.
+
+Licensee acknowledges and agrees that PrefactorTech has set its prices and entered into this Agreement in reliance upon the disclaimers of warranty and the limitations of liability set forth herein, that the same reflect an allocation of risk between the Parties (including the risk that a contract remedy may fail of its essential purpose and cause consequential loss), and that the same form an essential basis of the bargain between the Parties.
+
+9. Indemnity
+
+Licensee shall indemnify, defend and hold PrefactorTech, PrefactorTech's partners, affiliates, contractors, officers, directors, employees and agents harmless from and against any and all damages, losses and expenses arising directly or indirectly from Licensee's acts and omissions to act in using the Software pursuant to the terms of the Agreement.
+
+10. Limitation of Liability
+
+IN NO EVENT WILL PREFACTORTECH BE LIABLE TO LICENSEE FOR ANY LOST PROFITS OR SAVINGS, LOST BUSINESS, LOSS OF DATA, LOSS OF REVENUE, LOSS OF USE OR MONEY, LOSS OF BUSINESS, LOSS OF OPPORTUNITY, INJURY TO PERSON OR PROPERTY OR ANY INCIDENTAL, SPECIAL, INDIRECT, PUNITIVE OR CONSEQUENTIAL DAMAGES (WHETHER OR NOT ALSO CONSTITUTING ONE OF THE FOREGOING SPECIFIC TYPES OF LOSS), WHETHER BASED ON BREACH OF CONTRACT, TORT (INCLUDING WITHOUT LIMITATION NEGLIGENCE OR OTHER FAULT OF EITHER PARTY), PRODUCT LIABILITY, OR OTHERWISE AND WHETHER OR NOT SUCH PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. THE FOREGOING SHALL APPLY REGARDLESS OF WHETHER SUCH LIABILITY IS BASED ON AN ACTION OR CLAIM IN CONTRACT, NEGLIGENCE, TORT, OR ANY OTHER THEORY OF LEGAL LIABILITY. IN NO EVENT SHALL PREFACTORTECH'S LIABILITY EXCEED AMOUNTS PAID TO PREFACTORTECH BY LICENSEE UNDER THIS AGREEMENT.
+
+Any claims for damages hereunder must be made within six (6) months from the time at which the Licensee became aware of the event that gave rise to the claim. Such claims may, under no circumstances, be brought later than one (1) year from the event that gave rise to the claim in question.
+
+11. Other terms
+
+Licensee may not sub-license, assign or otherwise transfer this license or Software except as expressly provided in this Agreement. Any attempt to otherwise sub-license, assign, or transfer any of the rights, duties or obligations hereunder is expressly prohibited and will terminate this Agreement.
+
+PrefactorTech has no obligation to provide You with any service (including but not limited to, technical support, maintenance, upgrades, modifications, or new releases) under this Agreement, except the Limited Warranty. The purchase of services, if applicable, shall be governed by separate agreements.
+
+By continuing the setup procedure, Licensee acknowledges that Licensee has read this Agreement, understands it, and agrees to be bound by its terms and conditions. Licensee further agrees that this is the complete and exclusive statement of the Agreement between Licensee and PrefactorTech, which supersedes any proposal or prior agreement, whether oral or written, and any other communications between Licensee and PrefactorTech relating to the subject matter of this Agreement. If any provision of this Agreement is held to be unenforceable for any reason, such provision shall be reformed only to the extent necessary to make it enforceable and the remaining provisions of this Agreement shall not be affected.
+
+This Agreement and all matters arising out of or in connection with this Agreement shall be interpreted, construed and governed exclusively in accordance with the laws of Taiwan. The United Nations Convention for the International Sale of Goods shall not apply. Any dispute, controversy or claim arising out of or relating to this Agreement or the breach, termination or validity thereof shall be finally settled at PrefactorTech's discretion (i) at PrefactorTech's competent courts; or (ii) by arbitration in accordance with the Arbitration Rules of International Chamber of Commerce. The arbitration shall be conducted in Taipei, Taiwan, in the Chinese  language. The award shall be final and binding on the Parties.

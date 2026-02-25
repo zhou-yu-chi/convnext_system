@@ -7,3 +7,6 @@ build/
 dist/
 license.dat/
 AI_System.spec/
+InstallerOutput/
+build/
+vcredist_x64.exe
